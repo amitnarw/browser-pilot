@@ -1,0 +1,1168 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { z } from "zod";
+import { spawn, ChildProcess } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ─── Configuration ───────────────────────────────────────────────────────
+
+interface ServerConfig {
+  port: number;
+  script: string;
+  startupTimeout: number;
+}
+
+interface ChromeConfig {
+  port: number;
+  executable: string;
+  profileDir: string;
+  startupTimeout: number;
+}
+
+interface LoggingConfig {
+  level: "debug" | "info" | "warn" | "error";
+}
+
+interface Config {
+  server: ServerConfig;
+  chrome: ChromeConfig;
+  extension: { dir: string };
+  logging: LoggingConfig;
+}
+
+interface ProcessState {
+  server: {
+    running: boolean;
+    healthy: boolean;
+    weStarted: boolean;
+    process: ChildProcess | null;
+    pid: number | null;
+  };
+  chrome: {
+    running: boolean;
+    healthy: boolean;
+    weStarted: boolean;
+    pid: number | null;
+  };
+  session: {
+    status: "idle" | "launching" | "ready" | "running" | "waiting" | "closing";
+    taskName: string | null;
+  };
+}
+
+// ─── Constants ───────────────────────────────────────────────────────────
+
+const CHROME_DEVTOOLS_MCP_PACKAGE = "chrome-devtools-mcp";
+const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+const PID_FILE = path.join(CONFIG_DIR, "server.pid");
+
+// ─── State ───────────────────────────────────────────────────────────────
+
+let config: Config;
+let state: ProcessState = {
+  server: { running: false, healthy: false, weStarted: false, process: null, pid: null },
+  chrome: { running: false, healthy: false, weStarted: false, pid: null },
+  session: { status: "idle", taskName: null },
+};
+
+let chromeDevtoolsClient: Client | null = null;
+let sidebarActive = false;
+let sidebarTaskName: string | null = null;
+let cleanupDone = false;
+let isInitializing = false;
+
+// ─── Logging ─────────────────────────────────────────────────────────────
+
+enum LogLevel { DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3 }
+
+const LOG_LEVELS: Record<string, LogLevel> = { debug: LogLevel.DEBUG, info: LogLevel.INFO, warn: LogLevel.WARN, error: LogLevel.ERROR };
+
+function log(msg: string, level: LogLevel = LogLevel.INFO): void {
+  const configuredLevel = LOG_LEVELS[config?.logging?.level || "info"] || LogLevel.INFO;
+  if (level < configuredLevel) return;
+
+  const prefix = "[browser-pilot]";
+  const levelStr = LogLevel[level].padEnd(5);
+  process.stderr.write(`${prefix} [${levelStr}] ${msg}\n`);
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────
+
+function getDefaultConfig(): Config {
+  const packageRoot = path.join(__dirname, "..", "..");
+  // Use .min.js (bundled) if available, otherwise fall back to .js (development)
+  const serverScriptMin = path.join(packageRoot, "dist", "server", "server.min.js");
+  const serverScriptDev = path.join(packageRoot, "dist", "server", "server.js");
+  const serverScript = fs.existsSync(serverScriptMin) ? serverScriptMin : serverScriptDev;
+
+  return {
+    server: {
+      port: 3026,
+      script: serverScript,
+      startupTimeout: 15000,
+    },
+    chrome: {
+      port: 9222,
+      executable: "auto-detect",
+      profileDir: path.join(CONFIG_DIR, "chrome-profile"),
+      startupTimeout: 20000,
+    },
+    extension: {
+      dir: path.join(packageRoot, "extension"),
+    },
+    logging: {
+      level: "info",
+    },
+  };
+}
+
+function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (source[key] && typeof source[key] === "object" && !Array.isArray(source[key]) && target[key] && typeof target[key] === "object") {
+      result[key] = deepMerge(target[key] as Record<string, unknown>, source[key] as Record<string, unknown>);
+    } else if (source[key] !== undefined) {
+      result[key] = source[key];
+    }
+  }
+  return result;
+}
+
+function loadConfig(): Config {
+  const defaults = getDefaultConfig();
+
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const raw = fs.readFileSync(CONFIG_FILE, "utf8");
+      const userConfig = JSON.parse(raw);
+      const merged = deepMerge(defaults as unknown as Record<string, unknown>, userConfig) as unknown as Config;
+      log("Config loaded from " + CONFIG_FILE);
+      return merged;
+    } catch (err) {
+      log("WARNING: Failed to parse config file, using defaults: " + (err as Error).message, LogLevel.WARN);
+      return defaults;
+    }
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaults, null, 2));
+    log("Created default config at " + CONFIG_FILE);
+  } catch (err) {
+    log("WARNING: Could not create config file: " + (err as Error).message, LogLevel.WARN);
+  }
+
+  return defaults;
+}
+
+// ─── Utilities ───────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url: string, timeoutMs: number = 3000): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+}
+
+// ─── Health Checks ───────────────────────────────────────────────────────
+
+async function checkServerHealth(): Promise<{ running: boolean; healthy: boolean }> {
+  try {
+    const resp = await fetchWithTimeout(`http://localhost:${config.server.port}/.identity`, 3000);
+    const data = await resp.json() as Record<string, unknown>;
+    return { running: true, healthy: data.identity === "browser-pilot-server" };
+  } catch {
+    return { running: false, healthy: false };
+  }
+}
+
+async function checkChromeHealth(): Promise<{ running: boolean; healthy: boolean }> {
+  try {
+    const resp = await fetchWithTimeout(`http://127.0.0.1:${config.chrome.port}/json/version`, 3000);
+    const data = await resp.json() as Record<string, unknown>;
+    return { running: true, healthy: !!data.webSocketDebuggerUrl };
+  } catch {
+    return { running: false, healthy: false };
+  }
+}
+
+async function waitForHealthy(checkFn: () => Promise<{ healthy: boolean }>, maxWaitMs: number, label: string): Promise<boolean> {
+  const start = Date.now();
+  const checkInterval = 1000;
+
+  while (Date.now() - start < maxWaitMs) {
+    const result = await checkFn();
+    if (result.healthy) {
+      log(`  → ${label} healthy ✓`);
+      return true;
+    }
+    await sleep(checkInterval);
+  }
+
+  log(`  → ${label} not healthy after ${maxWaitMs / 1000}s`, LogLevel.ERROR);
+  return false;
+}
+
+// ─── Chrome Detection ────────────────────────────────────────────────────
+
+function findChromePath(): string {
+  const paths = [
+    path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+    path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+    path.join(os.homedir(), "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe"),
+  ];
+
+  for (const p of paths) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  throw new Error("Chrome not found. Install Google Chrome or set chrome.executable in config.json");
+}
+
+// ─── Server Management ───────────────────────────────────────────────────
+
+let heartbeatTimer: NodeJS.Timeout | null = null;
+
+async function startServer(): Promise<boolean> {
+  log("Starting coordination server...");
+
+  const serverScript = config.server.script;
+  if (!fs.existsSync(serverScript)) {
+    log("ERROR: Server script not found: " + serverScript, LogLevel.ERROR);
+    return false;
+  }
+
+  // Kill any stale server from a previous wrapper instance
+  await killStaleServer();
+
+  const proc = spawn("node", [serverScript], {
+    cwd: path.dirname(serverScript),
+    detached: true,
+    stdio: "ignore",
+  });
+
+  proc.unref();
+
+  proc.on("exit", (code) => {
+    if (code !== 0 && state.server.weStarted) {
+      log(`Server crashed (exit code: ${code})`, LogLevel.WARN);
+      state.server.running = false;
+      state.server.healthy = false;
+      state.server.process = null;
+      state.server.pid = null;
+    }
+  });
+
+  state.server.weStarted = true;
+  state.server.process = proc;
+  state.server.pid = proc.pid || null;
+
+  log("  → Server started (PID: " + proc.pid + ")");
+
+  const healthy = await waitForHealthy(checkServerHealth, config.server.startupTimeout, "Server");
+  if (healthy) {
+    state.server.running = true;
+    state.server.healthy = true;
+    startHeartbeat();
+    return true;
+  }
+
+  return false;
+}
+
+async function killStaleServer(): Promise<void> {
+  try {
+    if (!fs.existsSync(PID_FILE)) return;
+    const pid = parseInt(fs.readFileSync(PID_FILE, "utf8").trim(), 10);
+    if (isNaN(pid)) return;
+
+    // Check if the PID is alive and is a node process
+    try {
+      process.kill(pid, 0); // Signal 0 = check if alive
+      // Process is alive — kill it
+      log("  → Killing stale server (PID: " + pid + ")");
+      process.kill(pid, "SIGTERM");
+      await sleep(500);
+      // Force kill if still alive
+      try { process.kill(pid, 0); process.kill(pid, "SIGKILL"); } catch {}
+    } catch {
+      // Process is already dead — fine
+    }
+
+    // Clean up PID file
+    try { fs.unlinkSync(PID_FILE); } catch {}
+  } catch {
+    // Ignore errors
+  }
+}
+
+function startHeartbeat(): void {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(async () => {
+    if (!state.server.weStarted) return;
+    const health = await checkServerHealth();
+    if (!health.healthy && state.server.running) {
+      log("Heartbeat failed — server crashed", LogLevel.WARN);
+      state.server.running = false;
+      state.server.healthy = false;
+      state.server.process = null;
+      state.server.pid = null;
+      stopHeartbeat();
+    }
+  }, 30_000); // Every 30 seconds
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+// ─── Chrome Management ───────────────────────────────────────────────────
+
+async function launchChrome(): Promise<boolean> {
+  log("Launching Chrome with extension auto-load...");
+
+  let chromeExe: string;
+  try {
+    chromeExe = config.chrome.executable === "auto-detect" ? findChromePath() : config.chrome.executable;
+  } catch (err) {
+    log("ERROR: " + (err as Error).message, LogLevel.ERROR);
+    return false;
+  }
+
+  const extensionDir = config.extension.dir;
+  if (!fs.existsSync(extensionDir)) {
+    log("ERROR: Extension directory not found: " + extensionDir, LogLevel.ERROR);
+    return false;
+  }
+
+  const profileDir = config.chrome.profileDir;
+  if (!fs.existsSync(profileDir)) {
+    fs.mkdirSync(profileDir, { recursive: true });
+  }
+
+  // Clear Chrome's extension cache to force reload of latest extension files
+  const extCacheDir = path.join(profileDir, "Default", "Extensions");
+  const crxCacheDir = path.join(profileDir, "extensions_crx_cache");
+  try {
+    if (fs.existsSync(extCacheDir)) fs.rmSync(extCacheDir, { recursive: true, force: true });
+    if (fs.existsSync(crxCacheDir)) fs.rmSync(crxCacheDir, { recursive: true, force: true });
+    log("  → Cleared extension cache");
+  } catch {
+    // Ignore — Chrome will still work, just might use cached files
+  }
+
+  const args = [
+    `--remote-debugging-port=${config.chrome.port}`,
+    `--user-data-dir=${profileDir}`,
+    `--load-extension=${extensionDir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-popup-blocking",
+    "--disable-translate",
+    "--disable-default-apps",
+    "--disable-fre",
+  ];
+
+  const proc = spawn(chromeExe, args, {
+    detached: true,
+    stdio: "ignore",
+  });
+
+  proc.unref();
+
+  state.chrome.weStarted = true;
+  state.chrome.pid = proc.pid || null;
+
+  log("  → Chrome launched (PID: " + proc.pid + ")");
+  log("  → Extension loaded from: " + extensionDir);
+  log("  → Waiting for Chrome to be ready...");
+
+  const healthy = await waitForHealthy(checkChromeHealth, config.chrome.startupTimeout, "Chrome");
+  if (healthy) {
+    state.chrome.running = true;
+    state.chrome.healthy = true;
+
+    // Check extension service worker
+    try {
+      const resp = await fetchWithTimeout(`http://127.0.0.1:${config.chrome.port}/json`, 3000);
+      const targets = await resp.json() as Array<Record<string, unknown>>;
+      const serviceWorker = targets.find((t) => t.type === "service_worker");
+      if (serviceWorker) {
+        log("  → Extension service worker detected ✓");
+      } else {
+        log("  → Extension service worker not yet detected (may take a moment)", LogLevel.WARN);
+      }
+    } catch {
+      // Ignore
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+// ─── Sidebar Management ─────────────────────────────────────────────────
+
+async function httpRequest(method: string, urlPath: string, body?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const url = `http://localhost:${config.server.port}${urlPath}`;
+  const options: RequestInit = {
+    method,
+    headers: { "Content-Type": "application/json" },
+  };
+  if (body) options.body = JSON.stringify(body);
+  try {
+    const resp = await fetchWithTimeout(url, 5000);
+    return (await resp.json()) as Record<string, unknown>;
+  } catch (err) {
+    return { success: false, error: "Server not reachable: " + (err as Error).message };
+  }
+}
+
+async function ensureSidebarActive(taskName: string): Promise<void> {
+  sidebarTaskName = taskName;
+  if (sidebarActive) {
+    log("[ensureSidebarActive] Already active, skipping");
+    return;
+  }
+  log("[ensureSidebarActive] Calling /sidebar/start with taskName: " + taskName);
+  const result = await httpRequest("POST", "/sidebar/start", { taskName });
+  log("[ensureSidebarActive] Response: " + JSON.stringify(result));
+  if (result.success) {
+    sidebarActive = true;
+    log("[ensureSidebarActive] sidebarActive set to true");
+  } else {
+    log("[ensureSidebarActive] FAILED — sidebarActive remains false", LogLevel.ERROR);
+  }
+}
+
+async function endSidebar(): Promise<void> {
+  if (!sidebarActive) return;
+  await httpRequest("POST", "/sidebar/end");
+  sidebarActive = false;
+  sidebarTaskName = null;
+}
+
+async function addSidebarAction(text: string, type?: string): Promise<void> {
+  if (!sidebarActive) return;
+  await httpRequest("POST", "/sidebar/action", { text, type });
+}
+
+// ─── chrome-devtools-mcp Connection ──────────────────────────────────────
+
+async function connectToChromeDevtoolsMcp(): Promise<boolean> {
+  if (chromeDevtoolsClient) {
+    log("chrome-devtools-mcp already connected");
+    return true;
+  }
+
+  const maxRetries = 5;
+  const retryDelayMs = 2000;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    log(`Connecting to chrome-devtools-mcp (attempt ${attempt}/${maxRetries})...`);
+
+    const transport = new StdioClientTransport({
+      command: "npx",
+      args: [CHROME_DEVTOOLS_MCP_PACKAGE, `--browserUrl=http://127.0.0.1:${config.chrome.port}`],
+    });
+
+    chromeDevtoolsClient = new Client(
+      { name: "browser-pilot-wrapper", version: "1.0.0" },
+      { capabilities: {} }
+    );
+
+    try {
+      await chromeDevtoolsClient.connect(transport);
+      log("  → Connected to chrome-devtools-mcp ✓");
+      return true;
+    } catch (err) {
+      log("  → Attempt " + attempt + " failed: " + (err as Error).message, attempt < maxRetries ? LogLevel.WARN : LogLevel.ERROR);
+      chromeDevtoolsClient = null;
+      if (attempt < maxRetries) {
+        await sleep(retryDelayMs);
+      }
+    }
+  }
+
+  return false;
+}
+
+// ─── ensureBrowserReady ──────────────────────────────────────────────────
+
+async function ensureBrowserReady(): Promise<{ ok: boolean; error?: string }> {
+  log("[ensureBrowserReady] Called. isInitializing=" + isInitializing + " session.status=" + state.session.status + " chromeDevtoolsClient=" + !!chromeDevtoolsClient + " sidebarActive=" + sidebarActive);
+
+  // Prevent concurrent initialization
+  if (isInitializing) {
+    log("[ensureBrowserReady] Already initializing, waiting...");
+    // Wait for initialization to complete
+    while (isInitializing) {
+      await sleep(500);
+    }
+    if (state.session.status === "ready" || state.session.status === "running") {
+      log("[ensureBrowserReady] Initialization completed successfully");
+      return { ok: true };
+    }
+    log("[ensureBrowserReady] Initialization failed");
+    return { ok: false, error: "Initialization failed" };
+  }
+
+  // Already ready
+  if ((state.session.status === "ready" || state.session.status === "running") && chromeDevtoolsClient && sidebarActive) {
+    log("[ensureBrowserReady] Already ready, returning early");
+    return { ok: true };
+  }
+
+  log("[ensureBrowserReady] Starting initialization...");
+  isInitializing = true;
+
+  try {
+    // Start server if needed
+    log("[ensureBrowserReady] Checking server health...");
+    const serverHealth = await checkServerHealth();
+    log("[ensureBrowserReady] Server healthy: " + serverHealth.healthy);
+    if (!serverHealth.healthy) {
+      log("[ensureBrowserReady] Server not running, auto-starting...");
+      if (!(await startServer())) {
+        state.session.status = "idle";
+        log("[ensureBrowserReady] Failed to start server", LogLevel.ERROR);
+        return { ok: false, error: "Failed to start coordination server" };
+      }
+    } else {
+      state.server.running = true;
+      state.server.healthy = true;
+    }
+
+    // Start Chrome if needed
+    log("[ensureBrowserReady] Checking Chrome health...");
+    const chromeHealth = await checkChromeHealth();
+    log("[ensureBrowserReady] Chrome healthy: " + chromeHealth.healthy);
+    if (!chromeHealth.healthy) {
+      log("[ensureBrowserReady] Chrome not running, auto-launching...");
+      // Close stale chrome-devtools-mcp client if Chrome was down
+      if (chromeDevtoolsClient) {
+        try { await chromeDevtoolsClient.close(); } catch {}
+        chromeDevtoolsClient = null;
+      }
+      if (!(await launchChrome())) {
+        state.session.status = "idle";
+        log("[ensureBrowserReady] Failed to launch Chrome", LogLevel.ERROR);
+        return { ok: false, error: "Failed to launch Chrome" };
+      }
+    } else {
+      state.chrome.running = true;
+      state.chrome.healthy = true;
+    }
+
+    // Start session — do this early so the sidebar shows immediately
+    log("[ensureBrowserReady] session.status=" + state.session.status + " — calling /session/start if idle...");
+    if (state.session.status === "idle") {
+      const sessionResult = await httpRequest("POST", "/session/start", { taskName: "AI Browser Task" });
+      log("[ensureBrowserReady] /session/start response: " + JSON.stringify(sessionResult));
+    }
+
+    // Activate sidebar — must be AFTER server is running (was failing before)
+    log("[ensureBrowserReady] sidebarActive=" + sidebarActive + " — calling ensureSidebarActive if false...");
+    if (!sidebarActive) {
+      await ensureSidebarActive("AI Browser Task");
+    }
+    log("[ensureBrowserReady] After ensureSidebarActive: sidebarActive=" + sidebarActive);
+
+    // Connect to chrome-devtools-mcp if needed (non-fatal — sidebar still works without it)
+    if (!chromeDevtoolsClient) {
+      log("[ensureBrowserReady] Connecting to chrome-devtools-mcp...");
+      const connected = await connectToChromeDevtoolsMcp();
+      log("[ensureBrowserReady] chrome-devtools-mcp connected: " + connected);
+      if (!connected) {
+        log("[ensureBrowserReady] chrome-devtools-mcp connection failed — browser actions will be unavailable until reconnected", LogLevel.WARN);
+        // Don't return error — session is started, sidebar will show
+      }
+    }
+
+    state.session.status = "ready";
+    log("[ensureBrowserReady] Browser ready ✓");
+    return { ok: true };
+  } finally {
+    isInitializing = false;
+  }
+}
+
+// ─── chrome-devtools-mcp Tool Caller ─────────────────────────────────────
+
+async function callChromeDevtoolsTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  sidebarText: string,
+  sidebarType: string
+): Promise<{ content: { type: "text"; text: string }[] }> {
+  // Ensure browser is ready
+  const ready = await ensureBrowserReady();
+  if (!ready.ok) {
+    return {
+      content: [{ type: "text" as const, text: "ERROR: " + ready.error }],
+    };
+  }
+
+  if (!chromeDevtoolsClient) {
+    return {
+      content: [{ type: "text" as const, text: "ERROR: chrome-devtools-mcp not connected" }],
+    };
+  }
+
+  try {
+    // Update session state
+    state.session.status = "running";
+    await httpRequest("POST", "/session/lock", { owner: "agent", action: toolName });
+
+    // Log to sidebar
+    await addSidebarAction(sidebarText, sidebarType);
+
+    // Call chrome-devtools-mcp
+    const result = await chromeDevtoolsClient.callTool({
+      name: toolName,
+      arguments: args,
+    });
+
+    // Lock stays "agent" for the entire session — only browser_stop resets it
+    state.session.status = "ready";
+
+    return result as { content: { type: "text"; text: string }[] };
+  } catch (err) {
+    // Even on error, keep lock as agent so user can't accidentally interfere
+    state.session.status = "ready";
+
+    return {
+      content: [{ type: "text" as const, text: "Error: " + (err as Error).message }],
+    };
+  }
+}
+
+// ─── Cleanup ─────────────────────────────────────────────────────────────
+
+async function cleanup(): Promise<void> {
+  if (cleanupDone) return;
+  cleanupDone = true;
+
+  log("Shutting down...");
+
+  // Stop heartbeat
+  stopHeartbeat();
+
+  // Disconnect chrome-devtools-mcp
+  if (chromeDevtoolsClient) {
+    try {
+      await chromeDevtoolsClient.close();
+      log("Disconnected chrome-devtools-mcp");
+    } catch {
+      // Ignore
+    }
+    chromeDevtoolsClient = null;
+  }
+
+  // Stop server if we started it
+  if (state.server.weStarted && state.server.process) {
+    try {
+      state.server.process.kill();
+      log("Stopped server (PID: " + state.server.pid + ")");
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Stop Chrome if we started it
+  if (state.chrome.weStarted) {
+    try {
+      const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
+      spawn("powershell", [
+        "-Command",
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*${profileDir}*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
+      ], { detached: true, stdio: "ignore" }).unref();
+      log("Stopped Chrome");
+    } catch {
+      // Ignore
+    }
+  }
+
+  // End sidebar if active
+  if (sidebarActive) {
+    await httpRequest("POST", "/sidebar/end").catch(() => {});
+  }
+
+  // Update session state
+  await httpRequest("POST", "/session/stop").catch(() => {});
+
+  log("Cleanup complete");
+}
+
+// ─── MCP Server ──────────────────────────────────────────────────────────
+
+const server = new McpServer({
+  name: "browser-pilot",
+  version: "1.0.0",
+});
+
+// ─── Browser Control Tools (Static Registration) ─────────────────────────
+
+// browser_start — INTERNAL, auto-start handles everything
+server.tool(
+  "browser_start",
+  "INTERNAL TOOL — DO NOT CALL. The browser auto-starts automatically when you use browser_navigate, browser_click, browser_type, or any other action tool. Calling this tool is unnecessary and will restart the session. Only use if explicitly asked to start the browser.",
+  {
+    taskName: z.string().optional().describe("Description of the task the AI will perform"),
+  },
+  async ({ taskName }: { taskName?: string }) => {
+    const name = taskName || "AI Browser Task";
+
+    if (state.session.status === "ready" || state.session.status === "running") {
+      return {
+        content: [{ type: "text" as const, text: "Browser already running. Session status: " + state.session.status }],
+      };
+    }
+
+    state.session.status = "launching";
+    state.session.taskName = name;
+
+    const ready = await ensureBrowserReady();
+    if (!ready.ok) {
+      return {
+        content: [{ type: "text" as const, text: "ERROR: " + ready.error }],
+      };
+    }
+
+    return {
+      content: [{
+        type: "text" as const,
+        text: "Browser started successfully.\n\nServer: http://localhost:" + config.server.port +
+          "\nChrome: http://127.0.0.1:" + config.chrome.port +
+          "\nExtension: Auto-loaded via --load-extension\nSession: Ready" +
+          "\n\nYou can now use browser tools (browser_navigate, browser_click, browser_type, etc.).",
+      }],
+    };
+  }
+);
+
+// browser_stop — explicit stop
+server.tool(
+  "browser_stop",
+  "Stop the browser and server. Ends the AI control session.",
+  {},
+  async () => {
+    // Disconnect chrome-devtools-mcp
+    if (chromeDevtoolsClient) {
+      try {
+        await chromeDevtoolsClient.close();
+      } catch {
+        // Ignore
+      }
+      chromeDevtoolsClient = null;
+    }
+
+    // End sidebar
+    await endSidebar();
+
+    // Stop session
+    await httpRequest("POST", "/session/stop");
+
+    // Stop Chrome if we started it
+    if (state.chrome.weStarted) {
+      try {
+        const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
+        spawn("powershell", [
+          "-Command",
+          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*${profileDir}*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
+        ], { detached: true, stdio: "ignore" }).unref();
+        log("Stopped Chrome");
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Stop server if we started it
+    if (state.server.weStarted && state.server.process) {
+      try {
+        state.server.process.kill();
+        log("Stopped server");
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Reset state
+    state.server = { running: false, healthy: false, weStarted: false, process: null, pid: null };
+    state.chrome = { running: false, healthy: false, weStarted: false, pid: null };
+    state.session = { status: "idle", taskName: null };
+    sidebarActive = false;
+    sidebarTaskName = null;
+
+    return {
+      content: [{ type: "text" as const, text: "Browser stopped. Session ended." }],
+    };
+  }
+);
+
+// browser_get_status — get current state
+server.tool(
+  "browser_get_status",
+  "Get current browser and session status.",
+  {},
+  async () => {
+    const serverHealth = await checkServerHealth();
+    const chromeHealth = await checkChromeHealth();
+    const sessionStateResp = await httpRequest("GET", "/session/state");
+
+    const lines = [
+      "=== BrowserPilot Status ===",
+      "",
+      "Server: " + (serverHealth.healthy ? "✓ Healthy" : "✗ Not responding") + " (port " + config.server.port + ")",
+      "Chrome: " + (chromeHealth.healthy ? "✓ Running" : "✗ Not running") + " (port " + config.chrome.port + ")",
+      "Session: " + (sessionStateResp.status || state.session.status),
+      "Task: " + (sessionStateResp.taskName || state.session.taskName || "None"),
+      "Lock: " + (sessionStateResp.lockOwner || "None"),
+      "",
+      "chrome-devtools-mcp: " + (chromeDevtoolsClient ? "Connected" : "Not connected"),
+    ];
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  }
+);
+
+// browser_navigate — go to URL
+server.tool(
+  "browser_navigate",
+  "Navigate the browser to a URL. Auto-starts browser if needed.",
+  {
+    url: z.string().describe("The URL to navigate to"),
+  },
+  async ({ url }: { url: string }) => {
+    return callChromeDevtoolsTool(
+      "navigate_page",
+      { url },
+      "Navigating to " + url,
+      "navigate"
+    );
+  }
+);
+
+// browser_click — click an element
+server.tool(
+  "browser_click",
+  "Click an element on the page. Use browser_snapshot first to get element UIDs.",
+  {
+    uid: z.string().describe("Element UID from snapshot (e.g., 'a[1]', 'button[2]')"),
+  },
+  async ({ uid }: { uid: string }) => {
+    return callChromeDevtoolsTool(
+      "click",
+      { uid },
+      "Clicking element (" + uid + ")",
+      "click"
+    );
+  }
+);
+
+// browser_type — type text (with optional submit key)
+server.tool(
+  "browser_type",
+  "Type text into the currently focused element. Optionally press a key after typing to submit forms.",
+  {
+    text: z.string().describe("Text to type"),
+    submitKey: z.string().optional().describe("Optional key to press after typing (e.g., 'Enter', 'Tab', 'Escape'). Use this to submit forms after typing."),
+  },
+  async ({ text, submitKey }: { text: string; submitKey?: string }) => {
+    return callChromeDevtoolsTool(
+      "type_text",
+      { text, submitKey },
+      "Typing: \"" + String(text).substring(0, 30) + (submitKey ? "\" + " + submitKey : "\""),
+      "type"
+    );
+  }
+);
+
+// browser_fill — fill an input field
+server.tool(
+  "browser_fill",
+  "Fill a specific input field by element UID.",
+  {
+    uid: z.string().describe("Element UID of the input field"),
+    value: z.string().describe("Value to fill in the field"),
+  },
+  async ({ uid, value }: { uid: string; value: string }) => {
+    return callChromeDevtoolsTool(
+      "fill",
+      { uid, value },
+      "Filling: \"" + String(value).substring(0, 30) + "\"",
+      "type"
+    );
+  }
+);
+
+// browser_scroll — scroll the page (uses evaluate_script since chrome-devtools-mcp has no scroll tool)
+server.tool(
+  "browser_scroll",
+  "Scroll the page up or down.",
+  {
+    direction: z.enum(["up", "down"]).optional().describe("Direction to scroll (default: down)"),
+    amount: z.number().optional().describe("Amount to scroll in pixels (default: 500)"),
+  },
+  async ({ direction, amount }: { direction?: string; amount?: number }) => {
+    const pixels = amount || 500;
+    const dy = direction === "up" ? -pixels : pixels;
+    return callChromeDevtoolsTool(
+      "evaluate_script",
+      { script: `window.scrollBy(0, ${dy})` },
+      "Scrolling " + (direction || "down") + " " + pixels + "px",
+      "scroll"
+    );
+  }
+);
+
+// browser_screenshot — take a screenshot
+server.tool(
+  "browser_screenshot",
+  "Take a screenshot of the current page.",
+  {
+    fullPage: z.boolean().optional().describe("Capture full page (true) or viewport only (false, default)"),
+  },
+  async ({ fullPage }: { fullPage?: boolean }) => {
+    return callChromeDevtoolsTool(
+      "take_screenshot",
+      { fullPage: fullPage || false },
+      "Taking screenshot",
+      "screenshot"
+    );
+  }
+);
+
+// browser_snapshot — get page content
+server.tool(
+  "browser_snapshot",
+  "Get the current page content as a DOM/accessibility snapshot. Use this to find element UIDs for clicking.",
+  {},
+  async () => {
+    return callChromeDevtoolsTool(
+      "take_snapshot",
+      {},
+      "Reading page content",
+      "snapshot"
+    );
+  }
+);
+
+// browser_press_key — press a keyboard key
+server.tool(
+  "browser_press_key",
+  "Press a keyboard key (e.g., Enter, Tab, Escape).",
+  {
+    key: z.string().describe("Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown')"),
+  },
+  async ({ key }: { key: string }) => {
+    return callChromeDevtoolsTool(
+      "press_key",
+      { key },
+      "Pressing: " + key,
+      "keypress"
+    );
+  }
+);
+
+// browser_wait — wait for text or time
+server.tool(
+  "browser_wait",
+  "Wait for text to appear on the page or wait a specific time.",
+  {
+    text: z.string().optional().describe("Text to wait for on the page"),
+    time: z.number().optional().describe("Time to wait in milliseconds"),
+  },
+  async ({ text, time }: { text?: string; time?: number }) => {
+    if (text) {
+      return callChromeDevtoolsTool(
+        "wait_for",
+        { text },
+        "Waiting for: " + text,
+        "default"
+      );
+    }
+    // Simple time wait
+    await sleep(time || 1000);
+    return {
+      content: [{ type: "text" as const, text: "Waited " + (time || 1000) + "ms" }],
+    };
+  }
+);
+
+// browser_evaluate — run JavaScript
+server.tool(
+  "browser_evaluate",
+  "Execute JavaScript code in the browser page.",
+  {
+    script: z.string().describe("JavaScript code to execute"),
+  },
+  async ({ script }: { script: string }) => {
+    return callChromeDevtoolsTool(
+      "evaluate_script",
+      { script },
+      "Executing JavaScript",
+      "script"
+    );
+  }
+);
+
+// browser_new_tab — open new tab
+server.tool(
+  "browser_new_tab",
+  "Open a new browser tab, optionally navigating to a URL.",
+  {
+    url: z.string().optional().describe("URL to open in the new tab"),
+  },
+  async ({ url }: { url?: string }) => {
+    return callChromeDevtoolsTool(
+      "new_page",
+      { url: url || "" },
+      "Opening new tab" + (url ? ": " + url : ""),
+      "navigate"
+    );
+  }
+);
+
+// browser_close_tab — close a tab
+server.tool(
+  "browser_close_tab",
+  "Close a browser tab. Use browser_get_tabs first to get the tab ID (pageId).",
+  {
+    tabId: z.number().optional().describe("Tab ID (pageId) to close, from browser_get_tabs. Default: current tab."),
+  },
+  async ({ tabId }: { tabId?: number }) => {
+    return callChromeDevtoolsTool(
+      "close_page",
+      tabId !== undefined ? { pageId: tabId } : {},
+      "Closing tab (pageId=" + (tabId !== undefined ? tabId : "current") + ")",
+      "default"
+    );
+  }
+);
+
+// browser_switch_tab — switch to a tab
+server.tool(
+  "browser_switch_tab",
+  "Switch to a specific browser tab. Use browser_get_tabs first to get the tab ID (pageId).",
+  {
+    tabId: z.number().describe("Tab ID (pageId) to switch to, from browser_get_tabs"),
+  },
+  async ({ tabId }: { tabId: number }) => {
+    return callChromeDevtoolsTool(
+      "select_page",
+      { pageId: tabId },
+      "Switching to tab (pageId=" + tabId + ")",
+      "default"
+    );
+  }
+);
+
+// browser_get_tabs — list open tabs
+server.tool(
+  "browser_get_tabs",
+  "List all open browser tabs.",
+  {},
+  async () => {
+    return callChromeDevtoolsTool(
+      "list_pages",
+      {},
+      "Listing tabs",
+      "default"
+    );
+  }
+);
+
+// browser_get_url — get current URL
+server.tool(
+  "browser_get_url",
+  "Get the URL of the current page.",
+  {},
+  async () => {
+    return callChromeDevtoolsTool(
+      "evaluate_script",
+      { script: "window.location.href" },
+      "Getting current URL",
+      "default"
+    );
+  }
+);
+
+// browser_hover — hover over an element
+server.tool(
+  "browser_hover",
+  "Hover over an element on the page.",
+  {
+    uid: z.string().describe("Element UID from snapshot"),
+  },
+  async ({ uid }: { uid: string }) => {
+    return callChromeDevtoolsTool(
+      "hover",
+      { uid },
+      "Hovering over element (" + uid + ")",
+      "default"
+    );
+  }
+);
+
+// browser_drag — drag from one element to another
+server.tool(
+  "browser_drag",
+  "Drag from one element to another.",
+  {
+    fromUid: z.string().describe("Source element UID"),
+    toUid: z.string().describe("Target element UID"),
+  },
+  async ({ fromUid, toUid }: { fromUid: string; toUid: string }) => {
+    return callChromeDevtoolsTool(
+      "drag",
+      { from_uid: fromUid, to_uid: toUid },
+      "Dragging from " + fromUid + " to " + toUid,
+      "drag"
+    );
+  }
+);
+
+// ─── Main ────────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  log("Starting BrowserPilot MCP server...");
+
+  // Load config
+  config = loadConfig();
+
+  // Start MCP server IMMEDIATELY — don't wait for chrome-devtools-mcp
+  // Tools will auto-connect on first call via ensureBrowserReady()
+  log("Starting MCP server on stdio...");
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  log("MCP server ready — 20 tools registered");
+
+  // Setup cleanup handlers
+  process.on("SIGINT", async () => { await cleanup(); process.exit(0); });
+  process.on("SIGTERM", async () => { await cleanup(); process.exit(0); });
+  process.on("exit", () => {
+    stopHeartbeat();
+    if (state.server.process) {
+      try { state.server.process.kill(); } catch {}
+    }
+  });
+}
+
+main().catch((err: Error) => {
+  log("Fatal error: " + err.message, LogLevel.ERROR);
+  cleanup().finally(() => process.exit(1));
+});

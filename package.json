@@ -1,0 +1,42 @@
+{
+  "name": "browser-pilot",
+  "version": "1.0.0",
+  "description": "AI browser automation sidebar with real-time activity feed",
+  "type": "module",
+  "main": "dist/mcp/wrapper.min.js",
+  "bin": {
+    "browser-pilot": "./bin/browser-pilot.js"
+  },
+  "files": [
+    "dist/",
+    "extension/",
+    "bin/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "bundle": "node scripts/bundle.mjs",
+    "prepublishOnly": "npm run build && npm run bundle",
+    "setup": "node bin/browser-pilot.js setup",
+    "stop": "node bin/browser-pilot.js stop",
+    "status": "node bin/browser-pilot.js status"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sse": "^0.16.1",
+    "chrome-devtools-mcp": "^1.0.0",
+    "express": "^4.21.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

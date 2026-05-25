@@ -1,0 +1,148 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 280px;
+      padding: 16px;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #21262d;
+    }
+    .header .icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #00aaff, #0055ff);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .header .title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    .status-row .label { color: #8b949e; }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    .status-dot.connected { background: #22c55e; }
+    .status-dot.disconnected { background: #ef4444; }
+    .task-name {
+      font-size: 12px;
+      color: #58a6ff;
+      background: #161b22;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      word-break: break-word;
+      border: 1px solid #21262d;
+    }
+    .task-name.no-task { color: #484f58; font-style: italic; }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      background: #21262d;
+      color: #e6edf3;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #30363d; }
+    .btn:active { background: #3d444d; }
+    .btn.primary {
+      background: linear-gradient(135deg, #00aaff, #0055ff);
+      border-color: #00aaff;
+    }
+    .btn.primary:hover { background: linear-gradient(135deg, #00bbff, #0066ff); }
+    .version {
+      text-align: center;
+      font-size: 11px;
+      color: #484f58;
+      margin-top: 12px;
+    }
+    .debug-toggle {
+      text-align: center;
+      font-size: 11px;
+      color: #58a6ff;
+      cursor: pointer;
+      margin-top: 8px;
+      text-decoration: underline;
+    }
+    .debug-toggle:hover { color: #79c0ff; }
+    .debug-panel {
+      display: none;
+      margin-top: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      color: #8b949e;
+    }
+    .debug-panel.visible { display: block; }
+    .log-entry { margin-bottom: 2px; }
+    .log-time { color: #484f58; }
+    .log-msg { color: #c9d1d9; }
+  </style>
+</head>
+<body>
+    <div class="header">
+      <div class="icon">BP</div>
+      <div class="title">BrowserPilot</div>
+    </div>
+
+  <div class="status-row">
+    <span class="label">Server</span>
+    <span id="connection-status">
+      <span class="status-dot disconnected" id="status-dot"></span>
+      <span id="status-text">Checking...</span>
+    </span>
+  </div>
+
+  <div class="status-row">
+    <span class="label">Task</span>
+  </div>
+  <div class="task-name no-task" id="task-display">No active task</div>
+
+  <button class="btn primary" id="open-sidebar">Open Activity Sidebar</button>
+  <button class="btn" id="take-control" style="margin-top:8px;">Take Control</button>
+
+  <div class="debug-toggle" id="debug-toggle">Show Debug Logs</div>
+  <div class="debug-panel" id="debug-panel"></div>
+
+  <div class="version" id="version-display">v1.0.0</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
