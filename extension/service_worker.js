@@ -25,6 +25,7 @@ function broadcastToTabs(state) {
 
   log("[broadcastToTabs] #" + broadcastCount + " active=" + active + " lockOwner=" + lockOwner + " actions=" + actions.length);
 
+  // Broadcast to content scripts in all tabs
   try {
     chrome.tabs.query({}, function(tabs) {
       if (chrome.runtime.lastError) {
@@ -60,6 +61,9 @@ function connectSSE() {
     eventSource = null;
   }
 
+  // Reset dedup key so initial state on connect is always broadcast to tabs
+  lastBroadcastKey = null;
+
   log("[connectSSE] Connecting to " + SERVER_URL + "/events...");
   eventSource = new EventSource(SERVER_URL + "/events");
 
@@ -79,14 +83,21 @@ function connectSSE() {
 
   eventSource.onerror = function(err) {
     log("[SSE] Connection error — will auto-reconnect");
-    // EventSource auto-reconnects by default
   };
 }
+
+// Periodic SSE reconnection check — handles service worker restarts,
+// server restarts, and initial connection failures (server not yet running)
+setInterval(function() {
+  if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+    log("[SSE] Connection closed — reconnecting...");
+    connectSSE();
+  }
+}, 3000);
 
 chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
   if (msg.type === "POPUP_GET_STATUS") {
     log("[POPUP_GET_STATUS] Received");
-    // Ensure SSE is connected
     if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
       log("[POPUP_GET_STATUS] SSE disconnected, reconnecting...");
       connectSSE();
@@ -128,6 +139,7 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
     return true;
   }
 
+  // OPEN_SIDEBAR — works because triggered by user gesture (click on content script button)
   if (msg.type === "OPEN_SIDEBAR") {
     log("[OPEN_SIDEBAR] Opening native side panel");
     chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {

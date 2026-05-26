@@ -3,6 +3,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { logToFile } from "./logger.js";
 
 const HTTP_PORT = 3026;
 const VERSION = "1.0.0";
@@ -110,12 +111,8 @@ function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-function logTime(): string {
-  return new Date().toTimeString().slice(0, 8);
-}
-
 function log(msg: string): void {
-  console.log("[" + logTime() + "] " + msg);
+  logToFile(msg);
 }
 
 function startSession(taskName: string): void {

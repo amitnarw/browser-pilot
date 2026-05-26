@@ -79,6 +79,8 @@ let sidebarActive = false;
 let sidebarTaskName: string | null = null;
 let cleanupDone = false;
 let isInitializing = false;
+let lastToolCallTime: number = 0;
+const BROWSER_IDLE_TIMEOUT_MS = 90_000; // 90 seconds
 
 // ─── Logging ─────────────────────────────────────────────────────────────
 
@@ -170,8 +172,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number = 3000): Promise<Response> {
-  return fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+async function fetchWithTimeout(url: string, timeoutMs: number = 3000, options?: RequestInit): Promise<Response> {
+  return fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
 }
 
 // ─── Health Checks ───────────────────────────────────────────────────────
@@ -425,7 +427,7 @@ async function httpRequest(method: string, urlPath: string, body?: Record<string
   };
   if (body) options.body = JSON.stringify(body);
   try {
-    const resp = await fetchWithTimeout(url, 5000);
+    const resp = await fetchWithTimeout(url, 5000, options);
     return (await resp.json()) as Record<string, unknown>;
   } catch (err) {
     return { success: false, error: "Server not reachable: " + (err as Error).message };
@@ -624,8 +626,9 @@ async function callChromeDevtoolsTool(
   }
 
   try {
-    // Update session state
+    // Update session state and track activity
     state.session.status = "running";
+    lastToolCallTime = Date.now();
     await httpRequest("POST", "/session/lock", { owner: "agent", action: toolName });
 
     // Log to sidebar
@@ -814,6 +817,29 @@ server.tool(
   }
 );
 
+// browser_done — signal task completion, hide sidebar, release lock
+// Does NOT kill Chrome or server — session can be resumed on next tool call
+server.tool(
+  "browser_done",
+  "Signal that the current task is complete. Hides the sidebar and releases browser control. Call this when you are done with the user's request. The browser stays open and the session can be resumed on the next tool call.",
+  {},
+  async () => {
+    // End sidebar
+    await endSidebar();
+
+    // Release lock (but keep session alive)
+    await httpRequest("POST", "/session/lock", { owner: null, action: null });
+    state.session.status = "idle";
+    lastToolCallTime = 0;
+
+    log("Task complete — sidebar hidden, lock released");
+
+    return {
+      content: [{ type: "text" as const, text: "Task complete. Browser control released. The sidebar is hidden but the browser stays open. Call any browser tool to resume." }],
+    };
+  }
+);
+
 // browser_get_status — get current state
 server.tool(
   "browser_get_status",
@@ -842,7 +868,7 @@ server.tool(
 // browser_navigate — go to URL
 server.tool(
   "browser_navigate",
-  "Navigate the browser to a URL. Auto-starts browser if needed.",
+  "Navigate the browser to a URL. Auto-starts browser if needed. After completing the user's full request, call browser_done to release control.",
   {
     url: z.string().describe("The URL to navigate to"),
   },
@@ -859,7 +885,7 @@ server.tool(
 // browser_click — click an element
 server.tool(
   "browser_click",
-  "Click an element on the page. Use browser_snapshot first to get element UIDs.",
+  "Click an element on the page. Use browser_snapshot first to get element UIDs. After completing the user's full request, call browser_done to release control.",
   {
     uid: z.string().describe("Element UID from snapshot (e.g., 'a[1]', 'button[2]')"),
   },
@@ -876,25 +902,38 @@ server.tool(
 // browser_type — type text (with optional submit key)
 server.tool(
   "browser_type",
-  "Type text into the currently focused element. Optionally press a key after typing to submit forms.",
+  "Type text into the currently focused element. Optionally press a key after typing to submit forms. After completing the user's full request, call browser_done to release control.",
   {
     text: z.string().describe("Text to type"),
     submitKey: z.string().optional().describe("Optional key to press after typing (e.g., 'Enter', 'Tab', 'Escape'). Use this to submit forms after typing."),
   },
   async ({ text, submitKey }: { text: string; submitKey?: string }) => {
-    return callChromeDevtoolsTool(
+    // Type the text first
+    const result = await callChromeDevtoolsTool(
       "type_text",
-      { text, submitKey },
-      "Typing: \"" + String(text).substring(0, 30) + (submitKey ? "\" + " + submitKey : "\""),
+      { text },
+      "Typing: \"" + String(text).substring(0, 30) + "\"",
       "type"
     );
+
+    // If submitKey provided, press it separately (more reliable than passing to type_text)
+    if (submitKey) {
+      await callChromeDevtoolsTool(
+        "press_key",
+        { key: submitKey },
+        "Pressing: " + submitKey,
+        "keypress"
+      );
+    }
+
+    return result;
   }
 );
 
 // browser_fill — fill an input field
 server.tool(
   "browser_fill",
-  "Fill a specific input field by element UID.",
+  "Fill a specific input field by element UID. After completing the user's full request, call browser_done to release control.",
   {
     uid: z.string().describe("Element UID of the input field"),
     value: z.string().describe("Value to fill in the field"),
@@ -1149,7 +1188,18 @@ async function main(): Promise<void> {
   log("Starting MCP server on stdio...");
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  log("MCP server ready — 20 tools registered");
+  log("MCP server ready — 21 tools registered");
+
+  // Idle timeout — auto-close sidebar if no tool calls for 90 seconds
+  setInterval(async () => {
+    if (lastToolCallTime > 0 && Date.now() - lastToolCallTime > BROWSER_IDLE_TIMEOUT_MS) {
+      log("Idle timeout — auto-closing sidebar (no tool calls for " + (BROWSER_IDLE_TIMEOUT_MS / 1000) + "s)");
+      lastToolCallTime = 0;
+      await endSidebar();
+      await httpRequest("POST", "/session/lock", { owner: null, action: null });
+      state.session.status = "idle";
+    }
+  }, 10_000);
 
   // Setup cleanup handlers
   process.on("SIGINT", async () => { await cleanup(); process.exit(0); });
