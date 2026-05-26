@@ -112,6 +112,11 @@ AI calls browser_stop
 - `browser_get_status` tool — Returns session state
 - 17 high-level browser tools — navigate, click, type, fill, scroll, screenshot, snapshot, press_key, wait, evaluate, new_tab, close_tab, switch_tab, get_tabs, get_url, hover, drag
 - Cleanup on exit (kills server/Chrome if we started them)
+- `fetchWithTimeout` bug fix — method/headers/body were dropped, making all POSTs into GETs
+- `submitKey` fix — now calls `press_key` separately (chrome-devtools-mcp's type_text submitKey unreliable)
+- `browser_done` tool — signals task completion, hides overlay, releases lock
+- 90-second idle timeout — auto-closes sidebar if AI forgets `browser_done`
+- Tool descriptions updated — all browser tools tell AI to call `browser_done` when done
 
 ### Coordination Server (`src/server/server.ts`)
 - Express HTTP server on port 3026
@@ -121,11 +126,12 @@ AI calls browser_stop
 - Sidebar endpoints: `/sidebar/start`, `/sidebar/end`, `/sidebar/action`, `/sidebar/state`
 - PID file at `~/.browser-pilot/server.pid`
 - Recordings at `~/.browser-pilot/recordings/`
+- `server/logger.ts` — Persistent file logger with 10MB rotation, 7 files kept at `~/.browser-pilot/logs/server.log`
 
 ### Chrome Extension
 - `manifest.json` — MV3, permissions: sidePanel, tabs, activeTab
-- `service_worker.js` — Polls server, broadcasts lock state to all tabs
-- `content.js` — Hard lock overlay (blocks all mouse/keyboard when agent is controlling)
+- `service_worker.js` — SSE client with periodic reconnection, broadcasts LOCK_STATE to tabs
+- `content.js` — Blocking overlay + status bar (bottom-right). CSS `pointer-events: auto` blocks user mouse/touch. No JS capture listeners (they blocked AI tool events from CDP). Status bar shows: dot + task name + "Take Control" + "Open full →". Idle badge when session inactive.
 - `sidepanel.html/js` — Dark-themed activity feed with lock banner
 - `popup.html/js` — Status popup
 
@@ -137,13 +143,12 @@ AI calls browser_stop
 
 ### Not Yet Implemented
 1. **Chrome Web Store publication** — Extension should be published for clean install (no nudge bar)
-2. **Idle timeout** — Currently explicit stop only; could add auto-close after X minutes
-3. **Step-level locking** — Currently hard lock during entire session; could unlock between steps
-4. **User takeover** — "Take Control" button in overlay exists but doesn't communicate back to wrapper
-5. **Session recordings playback** — Recordings are saved but no UI to replay them
-6. **Error recovery** — If Chrome crashes mid-session, wrapper should detect and restart
-7. **Multi-tab awareness** — Sidebar could show which tab is being controlled
-8. **Screenshot capture** — Could auto-screenshot after each action for visual history
+2. **Step-level locking** — Currently hard lock during entire session; could unlock between steps
+3. **User takeover** — "Take Control" button in overlay exists but doesn't communicate back to wrapper
+4. **Session recordings playback** — Recordings are saved but no UI to replay them
+5. **Error recovery** — If Chrome crashes mid-session, wrapper should detect and restart
+6. **Multi-tab awareness** — Sidebar could show which tab is being controlled
+7. **Screenshot capture** — Could auto-screenshot after each action for visual history
 
 ### Known Issues
 1. **`--load-extension` nudge bar** — Chrome shows "Disable developer mode extensions" banner on each launch. Fixed by Chrome Web Store publication.
@@ -167,7 +172,8 @@ C:\Users\admin\browser-pilot\
 │   │   ├── stop.ts               # browser-pilot stop
 │   │   └── status.ts             # browser-pilot status
 │   ├── server/
-│   │   └── server.ts             # Express HTTP server (port 3026)
+│   │   ├── server.ts             # Express HTTP server (port 3026)
+│   │   └── logger.ts             # Persistent file logger with rotation
 │   └── mcp/
 │       └── wrapper.ts            # MCP server (stdio transport)
 ├── dist/                         # Compiled JS output (ESM)
@@ -220,6 +226,12 @@ C:\Users\admin\browser-pilot\
 - Lines 722-850: Static browser tools (navigate, click, type, fill, scroll, screenshot, snapshot, press_key, wait, evaluate, new_tab, close_tab, switch_tab, get_tabs, get_url, hover, drag)
 - Lines 852-880: main() — eager connection attempt, stdio transport
 
+### wrapper.ts — Key Fixes
+- `fetchWithTimeout()` — Fixed to pass method/headers/body options (was dropping them)
+- `browser_done` tool — Signals task completion, hides overlay, releases lock
+- 90-second idle timeout — Auto-closes sidebar if no tool calls for 90 seconds
+- `submitKey` fix — Calls `press_key` separately after `type_text`
+
 ### server.ts — HTTP Server
 - Lines 1-47: Imports, interfaces, constants
 - Lines 49-90: State, recordings dir, PID file, logging
@@ -229,13 +241,15 @@ C:\Users\admin\browser-pilot\
 - Lines 232-280: Sidebar endpoints (start, end, action, state)
 - Lines 282-362: Sessions history, server listen, graceful shutdown
 
-### content.js — Hard Lock Overlay
-- Creates full-page overlay div with pointer-events: auto
-- Blocks all mouse/keyboard/focus events
-- Shows "AI is controlling the browser" banner
-- "Take Control" button removes overlay
+### content.js — Blocking Overlay + Status Bar
+- Creates full-page transparent overlay div with `pointer-events: auto`
+- CSS overlay blocks user mouse/touch interactions (no JS capture listeners)
+- Status bar at bottom-right: dot + "BrowserPilot" + task name + "Take Control" + "Open full →"
+- "Take Control" button removes overlay locally
+- "Open full →" opens native side panel via message to service worker
+- Idle badge shown when session inactive (click opens native side panel)
 - Listens for LOCK_STATE messages from service worker
-- Checks initial state on load
+- Checks initial state on load (with 4-second retry for race conditions)
 
 ## Configuration Files
 
@@ -337,8 +351,10 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}
 | Sidebar logging | Every tool call | Real-time activity feed |
 | Code protection | esbuild minification | Obfuscated .min.js output for npm publishing |
 | `--load-extension` | Auto-load extension | No manual install step, works in Chrome 148+ |
-| Hard lock | Full-page overlay | Prevents race conditions between AI and user |
-| Explicit stop only | No idle timeout | AI controls lifecycle, keeps session warm |
+| Hard lock | Full-page overlay | CSS `pointer-events: auto` blocks mouse/touch; no JS listeners (blocked AI tools) |
+| 90-second idle timeout | Auto-close sidebar | Safety fallback if AI forgets `browser_done` |
+| `browser_done` tool | Explicit completion signal | AI tells us when work is done; overlay hides, lock released |
+| CSS-only blocking | pointer-events:auto | JS capture listeners blocked CDP events (trusted); CSS overlay is sufficient |
 | Session state in server | In-memory | Simple for testing, no persistence needed |
 | PID file at config dir | `~/.browser-pilot/server.pid` | Survives project directory changes |
 | chrome-devtools-mcp as dependency | Regular dependency | Single `npm install` gets everything |

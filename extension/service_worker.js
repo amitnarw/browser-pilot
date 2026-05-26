@@ -13,9 +13,11 @@ function broadcastToTabs(state) {
   var taskName = state.taskName || "";
   var actions = state.actions || [];
   var active = state.active || false;
+  var lastActionType = state.lastActionType || null;
+  var sessionStatus = state.sessionStatus || "idle";
 
   // Build a state key — only broadcast when something actually changed
-  var stateKey = [lockOwner, active, taskName, actions.length].join(":");
+  var stateKey = [lockOwner, active, taskName, actions.length, lastActionType].join(":");
   if (stateKey === lastBroadcastKey) {
     log("[broadcastToTabs] No change, skipping (key=" + stateKey + ")");
     return;
@@ -23,7 +25,7 @@ function broadcastToTabs(state) {
   lastBroadcastKey = stateKey;
   broadcastCount++;
 
-  log("[broadcastToTabs] #" + broadcastCount + " active=" + active + " lockOwner=" + lockOwner + " actions=" + actions.length);
+  log("[broadcastToTabs] #" + broadcastCount + " active=" + active + " lockOwner=" + lockOwner + " actions=" + actions.length + " lastAction=" + lastActionType);
 
   // Broadcast to content scripts in all tabs
   try {
@@ -41,6 +43,8 @@ function broadcastToTabs(state) {
             taskName: taskName,
             actions: actions.slice(-10),
             active: active,
+            lastActionType: lastActionType,
+            sessionStatus: sessionStatus,
           }, function(response) {
             if (chrome.runtime.lastError) {
               // Tab might not have content script — that's OK
@@ -136,6 +140,23 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
     })
       .then(function() { sendResponse({ success: true }); })
       .catch(function(err) { sendResponse({ success: false, error: err.message }); });
+    return true;
+  }
+
+  if (msg.type === "STOP_BROWSER") {
+    log("[STOP_BROWSER] Stop signal received — sending /session/stop");
+    fetch(SERVER_URL + "/session/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then(function() {
+        log("[STOP_BROWSER] Server stopped successfully");
+        sendResponse({ success: true });
+      })
+      .catch(function(err) {
+        log("[STOP_BROWSER] Server stop failed: " + err.message);
+        sendResponse({ success: false, error: err.message });
+      });
     return true;
   }
 

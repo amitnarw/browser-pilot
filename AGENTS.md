@@ -84,6 +84,26 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.browser-pilot\chrome-profile\exte
 **Problem:** Wrapper crashes left server + Chrome running as orphans.
 **Fix:** Added `killStaleServer()` before starting new server + heartbeat check every 30 seconds.
 
+### 6. fetchWithTimeout Bug Fix
+**Problem:** `fetchWithTimeout()` in wrapper.ts was dropping `method`/`headers`/`body` options — all POST requests became GETs, returning HTML 404. Session never started, sidebar never activated.
+**Fix:** Now passes `options` via `{ ...options, signal: AbortSignal.timeout() }`.
+
+### 7. submitKey Unreliable in chrome-devtools-mcp
+**Problem:** Passing `submitKey` to chrome-devtools-mcp's `type_text` tool didn't reliably press the key after typing.
+**Fix:** `browser_type` now calls `type_text` first, then calls `press_key` separately if `submitKey` is provided.
+
+### 8. JavaScript Capture Listeners Blocked AI Tool Events
+**Problem:** Content.js added capture-phase listeners on `document` for `click`, `keydown`, etc. that called `e.stopPropagation()` + `e.preventDefault()`. This blocked ALL events — including CDP-dispatched events from AI tools (click, type, press_key). Attempted `isTrusted` check but CDP's `Input.dispatchMouseEvent/Key` creates trusted events (isTrusted=true).
+**Fix:** Removed all JavaScript capture listeners. CSS overlay with `pointer-events: auto` already blocks user mouse/touch interactions naturally.
+
+### 9. Content.js Simplified
+**Problem:** 340px embedded sidebar panel was complex and conflicted with native side panel.
+**Fix:** Content script now injects:
+- Full-page transparent overlay (blocks page interaction while AI active)
+- Status bar at bottom-right: dot + "BrowserPilot" + task name + "Take Control" + "Open full →"
+- Idle badge when session inactive
+- "Open full →" opens native side panel
+
 ## How It Works (End-to-End Flow)
 
 1. **User asks AI:** `"go to google and search for phone"`
@@ -96,29 +116,33 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.browser-pilot\chrome-profile\exte
    - Connects to chrome-devtools-mcp
 4. **Server broadcasts** `active: true` via SSE (`/events` endpoint)
 5. **Extension service worker** receives SSE event instantly (0ms delay)
-6. **Content script** receives `LOCK_STATE` message → shows overlay + sidebar
-7. **Sidebar appears** on right edge (340px dark panel)
+6. **Content script** receives `LOCK_STATE` message → shows blocking overlay + status bar
+7. **Status bar** appears at bottom-right (dot + task name + "Take Control" + "Open full →")
 8. **AI tool executes** (navigate, click, type, etc.)
-9. **Actions appear** in sidebar in real-time via SSE push
+9. **Actions appear** in status bar in real-time via SSE push
+10. **AI calls `browser_done`** → overlay hides, lock released, session stays alive (ready)
+11. **90-second idle timeout** auto-closes sidebar if AI forgets `browser_done`
 
 ## File Structure
 
 ```
 D:\amit\browser-pilot\
 ├── src/
-│   ├── mcp/wrapper.ts          # MCP server, 20 browser tools
-│   └── server/server.ts        # HTTP server, session/sidebar state
+│   ├── mcp/wrapper.ts          # MCP server, 21 browser tools
+│   ├── server/server.ts        # HTTP server, session/sidebar state
+│   └── server/logger.ts        # Persistent file logger with rotation
 ├── extension/
 │   ├── manifest.json             # Chrome extension manifest
 │   ├── service_worker.js        # SSE client, broadcasts LOCK_STATE
-│   ├── content.js               # Injected sidebar overlay
+│   ├── content.js               # Blocking overlay + status bar
 │   ├── popup.html               # Extension popup UI
 │   ├── popup.js                 # Popup logic
 │   ├── sidepanel.html           # Native side panel (real-time via SSE)
 │   └── sidepanel.js             # Side panel SSE client + DOM updates
 ├── dist/                        # Compiled + minified output
 │   ├── mcp/wrapper.min.js
-│   └── server/server.min.js
+│   ├── server/server.min.js
+│   └── server/logger.min.js
 └── AGENTS.md                    # This file
 ```
 
@@ -146,6 +170,9 @@ Invoke-RestMethod "http://127.0.0.1:9222/json/version" | ConvertTo-Json
 # Kill all BrowserPilot processes
 Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like "*browser-pilot*" -or $_.CommandLine -like "*chrome-devtools*" } | Stop-Process -Force
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*browser-pilot*" } | Stop-Process -Force
+
+# Get server logs (persistent file)
+Get-Content "$env:USERPROFILE\.browser-pilot\logs\server.log" -Tail 20
 ```
 
 ## Debug Logging
@@ -185,3 +212,7 @@ These logs appear in the OpenCode terminal (stderr) when running the wrapper.
 - **Extension must be reloaded** after every code change — this is the #1 cause of "sidebar not visible"
 - **Server is independent** of wrapper — survives wrapper crashes
 - **Chrome is independent** of wrapper — user can close it manually
+- **`browser_done`** signals task completion — AI should call it when done (90s idle timeout as fallback)
+- **CSS overlay** with `pointer-events: auto` blocks user mouse/touch — no JS capture listeners needed
+- **`isTrusted` does NOT work** for CDP events — `Input.dispatchMouseEvent/Key` creates trusted events
+- **Server logs** at `~/.browser-pilot/logs/server.log` — 10MB rotation, 7 files kept

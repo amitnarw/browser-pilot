@@ -3,14 +3,25 @@
 
   var overlay = null;
   var badge = null;
+  var glowElements = {};
   var lastActiveState = null;
   var currentTaskName = "";
   var currentActionCount = 0;
+  var lastActionType = "default";
+  var idleTimer = null;
+  var IDLE_TIMEOUT_MS = 3000;
+  var stateCheckInterval = null;
+  var STATE_CHECK_INTERVAL_MS = 5000;
 
   console.log("[BrowserPilot] Content script loaded on " + window.location.href);
 
-  // ─── Inject Styles ────────────────────────────────────────────────────
+  // ─── Load External Glow CSS ─────────────────────────────────────────────
+  var glowCssLink = document.createElement("link");
+  glowCssLink.rel = "stylesheet";
+  glowCssLink.href = chrome.runtime.getURL("glow.css");
+  document.head.appendChild(glowCssLink);
 
+  // ─── Inject Inline Styles ───────────────────────────────────────────────
   var styleEl = document.createElement("style");
   styleEl.textContent = [
     "@keyframes bp-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }",
@@ -29,7 +40,7 @@
     "  padding: 12px 16px; display: flex; align-items: center; gap: 12px;",
     "  font-family: Inter, -apple-system, sans-serif; font-size: 12px; color: #e2e8f0;",
     "  box-shadow: 0 4px 20px rgba(0,0,0,0.4); pointer-events: auto; cursor: default;",
-    "  max-width: 360px;",
+    "  max-width: 420px;",
     "}",
     ".bp-bar-dot {",
     "  width: 8px; height: 8px; border-radius: 50%; background: #22d3ee;",
@@ -39,13 +50,6 @@
     ".bp-bar-info { flex: 1; min-width: 0; }",
     ".bp-bar-title { font-weight: 600; font-size: 11px; color: #e2e8f0; }",
     ".bp-bar-status { font-size: 10px; color: #38bdf8; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
-    ".bp-bar-btn {",
-    "  padding: 6px 12px; background: rgba(56, 189, 248, 0.12);",
-    "  border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px;",
-    "  color: #38bdf8; font-size: 11px; font-weight: 600;",
-    "  cursor: pointer; white-space: nowrap; font-family: inherit; flex-shrink: 0;",
-    "}",
-    ".bp-bar-btn:hover { background: rgba(56, 189, 248, 0.2); }",
     ".bp-bar-takeover {",
     "  padding: 6px 10px; background: rgba(239, 68, 68, 0.12);",
     "  border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px;",
@@ -53,7 +57,13 @@
     "  cursor: pointer; white-space: nowrap; font-family: inherit; flex-shrink: 0;",
     "}",
     ".bp-bar-takeover:hover { background: rgba(239, 68, 68, 0.2); }",
-    // Idle badge
+    ".bp-bar-btn {",
+    "  padding: 6px 12px; background: rgba(56, 189, 248, 0.12);",
+    "  border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px;",
+    "  color: #38bdf8; font-size: 11px; font-weight: 600;",
+    "  cursor: pointer; white-space: nowrap; font-family: inherit; flex-shrink: 0;",
+    "}",
+    ".bp-bar-btn:hover { background: rgba(56, 189, 248, 0.2); }",
     ".bp-badge {",
     "  position: fixed; bottom: 16px; right: 16px; z-index: 2147483646;",
     "  background: rgba(13, 17, 23, 0.92); backdrop-filter: blur(12px);",
@@ -69,16 +79,115 @@
   ].join("\n");
   document.head.appendChild(styleEl);
 
-  // ─── Create Blocking Overlay + Status Bar ─────────────────────────────
+  // ─── Glow Management ────────────────────────────────────────────────────
+
+  function createGlowElements() {
+    if (Object.keys(glowElements).length > 0) return;
+    var positions = ["top", "bottom", "left", "right"];
+    for (var i = 0; i < positions.length; i++) {
+      var pos = positions[i];
+      var el = document.createElement("div");
+      el.className = "bp-glow bp-glow-" + pos + " bp-glow-default bp-glow-pulse";
+      el.id = "bp-glow-" + pos;
+      document.body.appendChild(el);
+      glowElements[pos] = el;
+    }
+  }
+
+  function updateGlowColor(actionType) {
+    var type = actionType || lastActionType || "default";
+    lastActionType = type;
+    var isIdle = type === "wait";
+    var positions = ["top", "bottom", "left", "right"];
+    for (var i = 0; i < positions.length; i++) {
+      var pos = positions[i];
+      var el = glowElements[pos];
+      if (!el) continue;
+      var classes = ["bp-glow", "bp-glow-" + pos];
+      if (isIdle) {
+        classes.push("bp-glow-idle", "bp-glow-idle-pulse");
+      } else {
+        classes.push("bp-glow-" + type, "bp-glow-pulse");
+      }
+      el.className = classes.join(" ");
+    }
+  }
+
+  function setGlowIdle() {
+    var positions = ["top", "bottom", "left", "right"];
+    for (var i = 0; i < positions.length; i++) {
+      var pos = positions[i];
+      var el = glowElements[pos];
+      if (!el) continue;
+      el.className = "bp-glow bp-glow-" + pos + " bp-glow-idle bp-glow-idle-pulse";
+    }
+  }
+
+  function removeGlowElements() {
+    var positions = ["top", "bottom", "left", "right"];
+    for (var i = 0; i < positions.length; i++) {
+      var pos = positions[i];
+      var el = glowElements[pos];
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      glowElements[pos] = null;
+    }
+    glowElements = {};
+  }
+
+  // ─── Idle Timer ─────────────────────────────────────────────────────────
+
+  function resetIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(function() {
+      console.log("[BrowserPilot] Idle timeout — switching to gray glow");
+      setGlowIdle();
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  function clearIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  // ─── Periodic State Check ──────────────────────────────────────────────
+  // Checks server state periodically to handle SSE disconnections
+
+  function startStateCheck() {
+    if (stateCheckInterval) clearInterval(stateCheckInterval);
+    stateCheckInterval = setInterval(async function() {
+      if (lastActiveState !== true) return;
+      try {
+        var resp = await fetch("http://localhost:3026/sidebar/state");
+        var state = await resp.json();
+        if (!state.active) {
+          console.log("[BrowserPilot] State check: session ended — removing overlay");
+          lastActiveState = false;
+          clearIdleTimer();
+          removeOverlay();
+          removeGlowElements();
+          showBadge();
+        }
+      } catch (err) {
+        // Server might be down — keep overlay
+      }
+    }, STATE_CHECK_INTERVAL_MS);
+  }
+
+  function stopStateCheck() {
+    if (stateCheckInterval) {
+      clearInterval(stateCheckInterval);
+      stateCheckInterval = null;
+    }
+  }
+
+  // ─── Create Overlay + Status Bar ────────────────────────────────────────
 
   function createOverlay() {
     if (overlay) return overlay;
 
-    // Blocking overlay (transparent, covers page)
     overlay = document.createElement("div");
     overlay.className = "bp-overlay";
 
-    // Status bar (bottom-right, on top of overlay)
     var bar = document.createElement("div");
     bar.className = "bp-bar";
     bar.id = "bp-status-bar";
@@ -91,23 +200,38 @@
     var title = document.createElement("div");
     title.className = "bp-bar-title";
     title.textContent = "BrowserPilot";
+
+    var statusRow = document.createElement("div");
+    statusRow.style.display = "flex";
+    statusRow.style.alignItems = "center";
+
     var status = document.createElement("div");
     status.className = "bp-bar-status";
     status.id = "bp-bar-status";
     status.textContent = "AI is working...";
-    info.appendChild(title);
-    info.appendChild(status);
 
-    // Take Control button
-    var takeoverBtn = document.createElement("button");
-    takeoverBtn.className = "bp-bar-takeover";
-    takeoverBtn.textContent = "Take Control";
-    takeoverBtn.addEventListener("click", function(e) {
+    var typingDots = document.createElement("div");
+    typingDots.className = "bp-typing-dots";
+    typingDots.id = "bp-typing-dots";
+    typingDots.innerHTML = "<span></span><span></span><span></span>";
+    typingDots.style.display = "none";
+
+    statusRow.appendChild(status);
+    statusRow.appendChild(typingDots);
+
+    info.appendChild(title);
+    info.appendChild(statusRow);
+
+    // Stop button
+    var stopBtn = document.createElement("button");
+    stopBtn.className = "bp-stop-btn";
+    stopBtn.textContent = "Stop BrowserPilot";
+    stopBtn.addEventListener("click", function(e) {
       e.stopPropagation();
-      takeControl();
+      stopBrowserPilot();
     });
 
-    // Open full → button
+    // Open full sidebar button
     var openBtn = document.createElement("button");
     openBtn.className = "bp-bar-btn";
     openBtn.innerHTML = "Open full \u2192";
@@ -118,36 +242,69 @@
 
     bar.appendChild(dot);
     bar.appendChild(info);
-    bar.appendChild(takeoverBtn);
     bar.appendChild(openBtn);
+    bar.appendChild(stopBtn);
 
     overlay.appendChild(bar);
 
-    // CSS overlay with pointer-events:auto already blocks user mouse/touch.
-    // No JS capture listeners — they also blocked AI tool events from CDP.
-
     document.body.appendChild(overlay);
+    createGlowElements();
+    startStateCheck();
+
     return overlay;
   }
 
-  function updateStatus(taskName, actionCount) {
-    var status = document.getElementById("bp-bar-status");
-    if (status) {
+  function updateStatus(taskName, actionCount, actionType) {
+    var statusEl = document.getElementById("bp-bar-status");
+    var typingDots = document.getElementById("bp-typing-dots");
+
+    if (statusEl) {
       if (taskName) {
-        status.textContent = taskName + (actionCount > 0 ? " (" + actionCount + " actions)" : "");
+        statusEl.textContent = taskName + (actionCount > 0 ? " (" + actionCount + " actions)" : "");
       } else {
-        status.textContent = "AI is working... (" + actionCount + " actions)";
+        statusEl.textContent = "AI is working... (" + actionCount + " actions)";
       }
     }
+
+    // Show typing dots when typing
+    if (typingDots) {
+      var showTyping = actionType === "type" || actionType === "keypress";
+      typingDots.style.display = showTyping ? "inline-flex" : "none";
+    }
+
+    // Update glow color and reset idle timer
+    updateGlowColor(actionType);
+    resetIdleTimer();
   }
 
   function removeOverlay() {
     if (!overlay) return;
+    stopStateCheck();
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     overlay = null;
   }
 
-  // ─── Idle Badge ───────────────────────────────────────────────────────
+  // ─── Stop BrowserPilot ──────────────────────────────────────────────────
+
+  function stopBrowserPilot() {
+    var confirmed = window.confirm(
+      "Stop BrowserPilot?\n\n" +
+      "This will end the current AI session and release control."
+    );
+    if (!confirmed) return;
+
+    console.log("[BrowserPilot] Stop confirmed — sending stop signal");
+    clearIdleTimer();
+    removeOverlay();
+    removeGlowElements();
+    showBadge();
+
+    try {
+      chrome.runtime.sendMessage({ type: "STOP_BROWSER" });
+    } catch (e) {}
+  }
+
+  // ─── Idle Badge ─────────────────────────────────────────────────────────
 
   function showBadge() {
     if (badge && document.body.contains(badge)) return;
@@ -166,43 +323,49 @@
     badge = null;
   }
 
-  // ─── Take Control ─────────────────────────────────────────────────────
+  // ─── Take Control ───────────────────────────────────────────────────────
 
   function takeControl() {
     console.log("[BrowserPilot] Take Control clicked");
+    clearIdleTimer();
     removeOverlay();
+    removeGlowElements();
     showBadge();
     try { chrome.runtime.sendMessage({ type: "USER_TAKEOVER" }); } catch (e) {}
   }
 
-  // ─── Message Listener ─────────────────────────────────────────────────
+  // ─── Message Listener ───────────────────────────────────────────────────
 
   chrome.runtime.onMessage.addListener(function(msg) {
     if (msg.type === "LOCK_STATE") {
       var active = !!msg.active;
       currentTaskName = msg.taskName || currentTaskName;
       currentActionCount = (msg.actions || []).length;
+      var actionType = msg.lastActionType || "default";
+      var sessionStatus = msg.sessionStatus || "ready";
 
       if (active) {
         removeBadge();
         if (lastActiveState !== true) {
           lastActiveState = true;
-          console.log("[BrowserPilot] Session active — showing overlay");
+          console.log("[BrowserPilot] Session active — showing overlay + glow");
           createOverlay();
         }
-        updateStatus(currentTaskName, currentActionCount);
+        updateStatus(currentTaskName, currentActionCount, actionType);
       } else {
         if (lastActiveState !== false) {
           lastActiveState = false;
-          console.log("[BrowserPilot] Session ended — removing overlay, showing badge");
+          console.log("[BrowserPilot] Session ended — removing overlay + glow");
+          clearIdleTimer();
           removeOverlay();
+          removeGlowElements();
           showBadge();
         }
       }
     }
   });
 
-  // ─── Initial State Check ──────────────────────────────────────────────
+  // ─── Initial State Check ────────────────────────────────────────────────
 
   (async function() {
     try {
@@ -212,8 +375,12 @@
       if (state.active) {
         currentTaskName = state.taskName || "";
         currentActionCount = (state.actions || []).length;
+        var lastAction = state.actions && state.actions.length > 0
+          ? state.actions[state.actions.length - 1]
+          : null;
+        lastActionType = lastAction ? lastAction.type : "default";
         createOverlay();
-        updateStatus(currentTaskName, currentActionCount);
+        updateStatus(currentTaskName, currentActionCount, lastActionType);
       } else {
         showBadge();
       }
@@ -231,9 +398,13 @@
           lastActiveState = true;
           currentTaskName = state2.taskName || "";
           currentActionCount = (state2.actions || []).length;
+          var lastAction2 = state2.actions && state2.actions.length > 0
+            ? state2.actions[state2.actions.length - 1]
+            : null;
+          lastActionType = lastAction2 ? lastAction2.type : "default";
           removeBadge();
           createOverlay();
-          updateStatus(currentTaskName, currentActionCount);
+          updateStatus(currentTaskName, currentActionCount, lastActionType);
         }
       } catch {}
     }, 4000);

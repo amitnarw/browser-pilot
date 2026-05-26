@@ -37,7 +37,7 @@ npm test            # Run test suite
 
 ## Architecture
 
-- `src/mcp/wrapper.ts` — MCP server with 20 browser tools
+- `src/mcp/wrapper.ts` — MCP server with 21 browser tools
 - `src/server/server.ts` — HTTP server for session/sidebar state
 - `extension/` — Chrome extension (content script, service worker, popup)
 - `dist/` — Compiled and minified output

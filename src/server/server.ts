@@ -85,12 +85,14 @@ let sessionState: SessionState = {
 const sseClients: Set<Response> = new Set();
 
 function broadcastState(): void {
+  const lastAction = sidebarState.actions[sidebarState.actions.length - 1];
   const payload = JSON.stringify({
     lockOwner: sessionState.lockOwner,
     active: sidebarState.active,
     taskName: sidebarState.taskName,
     actions: sidebarState.actions.slice(-10),
     sessionStatus: sessionState.status,
+    lastActionType: lastAction ? lastAction.type : null,
   });
   for (const client of sseClients) {
     try {
@@ -348,10 +350,12 @@ app.post("/sidebar/action", (req: Request, res: Response) => {
 });
 
 app.get("/sidebar/state", (_req: Request, res: Response) => {
+  const lastAction = sidebarState.actions[sidebarState.actions.length - 1];
   res.json({
     ...sidebarState,
     lockOwner: sessionState.lockOwner,
     sessionStatus: sessionState.status,
+    lastActionType: lastAction ? lastAction.type : null,
   });
 });
 

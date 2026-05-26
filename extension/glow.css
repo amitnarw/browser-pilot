@@ -1,0 +1,154 @@
+/* ============================================
+   BrowserPilot Edge Glow System
+   Pulsating viewport edges showing AI activity
+   Inspired by Perplexity Comet browser
+   ============================================ */
+
+/* Base glow element */
+.bp-glow {
+  position: fixed;
+  z-index: 2147483646;
+  pointer-events: none;
+  transition: opacity 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Edge positions */
+.bp-glow-top {
+  top: 0; left: 0; right: 0; height: 40px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--glow-color, #3b82f6) 10%,
+    var(--glow-color, #3b82f6) 90%,
+    transparent 100%);
+  opacity: 0.8;
+}
+
+.bp-glow-bottom {
+  bottom: 0; left: 0; right: 0; height: 40px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--glow-color, #3b82f6) 10%,
+    var(--glow-color, #3b82f6) 90%,
+    transparent 100%);
+  opacity: 0.8;
+}
+
+.bp-glow-left {
+  top: 0; left: 0; bottom: 0; width: 40px;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    var(--glow-color, #3b82f6) 10%,
+    var(--glow-color, #3b82f6) 90%,
+    transparent 100%);
+  opacity: 0.8;
+}
+
+.bp-glow-right {
+  top: 0; right: 0; bottom: 0; width: 40px;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    var(--glow-color, #3b82f6) 10%,
+    var(--glow-color, #3b82f6) 90%,
+    transparent 100%);
+  opacity: 0.8;
+}
+
+/* Active pulse animation */
+@keyframes bp-glow-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    filter: blur(2px) brightness(1);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(4px) brightness(1.3);
+  }
+}
+
+.bp-glow-pulse {
+  animation: bp-glow-pulse 2s ease-in-out infinite;
+}
+
+/* Action colors */
+.bp-glow-navigate { --glow-color: #3b82f6; } /* Blue */
+.bp-glow-click { --glow-color: #22c55e; } /* Green */
+.bp-glow-type { --glow-color: #22c55e; } /* Green */
+.bp-glow-keypress { --glow-color: #22c55e; } /* Green */
+.bp-glow-fill { --glow-color: #22c55e; } /* Green */
+.bp-glow-scroll { --glow-color: #f59e0b; } /* Orange */
+.bp-glow-screenshot { --glow-color: #a855f7; } /* Purple */
+.bp-glow-snapshot { --glow-color: #a855f7; } /* Purple */
+.bp-glow-wait { --glow-color: #eab308; } /* Yellow */
+.bp-glow-evaluate { --glow-color: #ec4899; } /* Pink */
+.bp-glow-tab { --glow-color: #06b6d4; } /* Cyan */
+.bp-glow-default { --glow-color: #3b82f6; } /* Blue */
+
+/* Idle state (gray when waiting) */
+.bp-glow-idle { --glow-color: #64748b; }
+
+/* Idle pulse (slower, dimmer) */
+@keyframes bp-idle-pulse {
+  0%, 100% { opacity: 0.3; filter: blur(2px); }
+  50% { opacity: 0.6; filter: blur(3px); }
+}
+
+.bp-glow-idle-pulse {
+  animation: bp-idle-pulse 3s ease-in-out infinite;
+}
+
+/* Typing animation dots */
+.bp-typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 6px;
+  align-items: center;
+}
+
+.bp-typing-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: bp-typing-bounce 1.4s ease-in-out infinite both;
+}
+
+.bp-typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+.bp-typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bp-typing-bounce {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* Stop button styling */
+.bp-stop-btn {
+  padding: 8px 20px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  margin-left: 12px;
+}
+
+.bp-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  transform: translateY(-1px);
+}
+
+/* Accessibility: Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .bp-glow,
+  .bp-glow-pulse,
+  .bp-glow-idle-pulse,
+  .bp-typing-dots span {
+    animation: none !important;
+    opacity: 0.6;
+  }
+}
