@@ -1,99 +1,43 @@
 /* ============================================
-   BrowserPilot Edge Glow System
-   Pulsating viewport edges showing AI activity
-   Inspired by Perplexity Comet browser
+   BrowserPilot Prismatic Burst Overlay
+   WebGL ray-marching light burst animation
+   Visible at edges, faded in center (shader vignette)
    ============================================ */
 
-/* Base glow element */
-.bp-glow {
+:root {
+  --bp-bg-base: #171615;
+  --bp-bg-raised: #1e1d1c;
+  --bp-bg-overlay: #242322;
+  --bp-fg-primary: #d6d5d4;
+  --bp-fg-secondary: #d6d5d4a6;
+  --bp-fg-tertiary: #d6d5d480;
+  --bp-fg-muted: #d6d5d450;
+  --bp-fg-dim: #d6d5d433;
+  --bp-accent: #4e99a3;
+  --bp-accent-light: #64a6af;
+  --bp-positive: #539e55;
+  --bp-negative: #dc6973;
+  --bp-warning: #bc811e;
+  --bp-border: #d6d5d424;
+  --bp-border-accent: #4e99a33d;
+}
+
+/* Prismatic Burst canvas overlay */
+.bp-prismatic-burst {
   position: fixed;
-  z-index: 2147483646;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2147483648;
   pointer-events: none;
-  transition: opacity 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Edge positions */
-.bp-glow-top {
-  top: 0; left: 0; right: 0; height: 40px;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    var(--glow-color, #3b82f6) 10%,
-    var(--glow-color, #3b82f6) 90%,
-    transparent 100%);
-  opacity: 0.8;
-}
-
-.bp-glow-bottom {
-  bottom: 0; left: 0; right: 0; height: 40px;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    var(--glow-color, #3b82f6) 10%,
-    var(--glow-color, #3b82f6) 90%,
-    transparent 100%);
-  opacity: 0.8;
-}
-
-.bp-glow-left {
-  top: 0; left: 0; bottom: 0; width: 40px;
-  background: linear-gradient(180deg,
-    transparent 0%,
-    var(--glow-color, #3b82f6) 10%,
-    var(--glow-color, #3b82f6) 90%,
-    transparent 100%);
-  opacity: 0.8;
-}
-
-.bp-glow-right {
-  top: 0; right: 0; bottom: 0; width: 40px;
-  background: linear-gradient(180deg,
-    transparent 0%,
-    var(--glow-color, #3b82f6) 10%,
-    var(--glow-color, #3b82f6) 90%,
-    transparent 100%);
-  opacity: 0.8;
-}
-
-/* Active pulse animation */
-@keyframes bp-glow-pulse {
-  0%, 100% {
-    opacity: 0.6;
-    filter: blur(2px) brightness(1);
-  }
-  50% {
-    opacity: 1;
-    filter: blur(4px) brightness(1.3);
-  }
-}
-
-.bp-glow-pulse {
-  animation: bp-glow-pulse 2s ease-in-out infinite;
-}
-
-/* Action colors */
-.bp-glow-navigate { --glow-color: #3b82f6; } /* Blue */
-.bp-glow-click { --glow-color: #22c55e; } /* Green */
-.bp-glow-type { --glow-color: #22c55e; } /* Green */
-.bp-glow-keypress { --glow-color: #22c55e; } /* Green */
-.bp-glow-fill { --glow-color: #22c55e; } /* Green */
-.bp-glow-scroll { --glow-color: #f59e0b; } /* Orange */
-.bp-glow-screenshot { --glow-color: #a855f7; } /* Purple */
-.bp-glow-snapshot { --glow-color: #a855f7; } /* Purple */
-.bp-glow-wait { --glow-color: #eab308; } /* Yellow */
-.bp-glow-evaluate { --glow-color: #ec4899; } /* Pink */
-.bp-glow-tab { --glow-color: #06b6d4; } /* Cyan */
-.bp-glow-default { --glow-color: #3b82f6; } /* Blue */
-
-/* Idle state (gray when waiting) */
-.bp-glow-idle { --glow-color: #64748b; }
-
-/* Idle pulse (slower, dimmer) */
-@keyframes bp-idle-pulse {
-  0%, 100% { opacity: 0.3; filter: blur(2px); }
-  50% { opacity: 0.6; filter: blur(3px); }
-}
-
-.bp-glow-idle-pulse {
-  animation: bp-idle-pulse 3s ease-in-out infinite;
+.bp-prismatic-burst canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* Typing animation dots */
@@ -122,31 +66,63 @@
 
 /* Stop button styling */
 .bp-stop-btn {
-  padding: 8px 20px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  border-radius: 8px;
-  color: #fca5a5;
-  font-size: 12px;
-  font-weight: 600;
+  all: unset;
+  width: 20px;
+  height: 20px;
+  background: rgba(78, 153, 163, 0.1);
+  border: 1px solid rgba(78, 153, 163, 0.25);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  white-space: nowrap;
-  font-family: inherit;
+  flex-shrink: 0;
   transition: all 0.2s ease;
-  margin-left: 12px;
+  margin-left: 8px;
+}
+
+.bp-stop-btn svg {
+  width: 10px;
+  height: 10px;
 }
 
 .bp-stop-btn:hover {
-  background: rgba(239, 68, 68, 0.25);
-  border-color: rgba(239, 68, 68, 0.6);
-  transform: translateY(-1px);
+  background: rgba(220, 105, 115, 0.15);
+  border-color: rgba(220, 105, 115, 0.35);
+}
+
+/* Open sidebar button styling */
+.bp-bar-btn {
+  all: unset;
+  width: 20px;
+  height: 20px;
+  background: rgba(78, 153, 163, 0.1);
+  border: 1px solid rgba(78, 153, 163, 0.25);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+.bp-bar-btn svg {
+  width: 10px;
+  height: 10px;
+}
+
+.bp-bar-btn:hover {
+  background: rgba(78, 153, 163, 0.2);
+  border-color: rgba(78, 153, 163, 0.45);
 }
 
 /* Accessibility: Respect prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
-  .bp-glow,
-  .bp-glow-pulse,
-  .bp-glow-idle-pulse,
+  .bp-prismatic-burst {
+    display: none;
+  }
   .bp-typing-dots span {
     animation: none !important;
     opacity: 0.6;

@@ -8,8 +8,8 @@
       width: 280px;
       padding: 16px;
       font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
+      background: #171615;
+      color: #d6d5d4;
     }
     .header {
       display: flex;
@@ -17,12 +17,12 @@
       gap: 10px;
       margin-bottom: 16px;
       padding-bottom: 12px;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid rgba(78,153,163,0.1);
     }
     .header .icon {
       width: 28px;
       height: 28px;
-      background: linear-gradient(135deg, #00aaff, #0055ff);
+      background: linear-gradient(135deg, #4e99a3, #64a6af);
       border-radius: 8px;
       display: flex;
       align-items: center;
@@ -41,7 +41,7 @@
       margin-bottom: 12px;
       font-size: 13px;
     }
-    .status-row .label { color: #8b949e; }
+    .status-row .label { color: #d6d5d480; }
     .status-dot {
       width: 8px;
       height: 8px;
@@ -49,71 +49,71 @@
       display: inline-block;
       margin-right: 6px;
     }
-    .status-dot.connected { background: #22c55e; }
-    .status-dot.disconnected { background: #ef4444; }
+    .status-dot.connected { background: #539e55; }
+    .status-dot.disconnected { background: #dc6973; }
     .task-name {
       font-size: 12px;
-      color: #58a6ff;
-      background: #161b22;
+      color: #4e99a3;
+      background: #1e1d1c;
       padding: 8px 10px;
       border-radius: 6px;
       margin-bottom: 12px;
       word-break: break-word;
-      border: 1px solid #21262d;
+      border: 1px solid rgba(78,153,163,0.08);
     }
-    .task-name.no-task { color: #484f58; font-style: italic; }
+    .task-name.no-task { color: #d6d5d433; font-style: italic; }
     .btn {
       width: 100%;
       padding: 10px;
-      border: 1px solid #30363d;
+      border: 1px solid rgba(78,153,163,0.15);
       border-radius: 8px;
-      background: #21262d;
-      color: #e6edf3;
+      background: #1e1d1c;
+      color: #d6d5d4;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.15s;
     }
-    .btn:hover { background: #30363d; }
-    .btn:active { background: #3d444d; }
+    .btn:hover { background: rgba(78,153,163,0.08); }
+    .btn:active { background: rgba(78,153,163,0.12); }
     .btn.primary {
-      background: linear-gradient(135deg, #00aaff, #0055ff);
-      border-color: #00aaff;
+      background: linear-gradient(135deg, #4e99a3, #64a6af);
+      border-color: #4e99a3;
     }
-    .btn.primary:hover { background: linear-gradient(135deg, #00bbff, #0066ff); }
+    .btn.primary:hover { background: linear-gradient(135deg, #5aa8b2, #6eb0b9); }
     .version {
       text-align: center;
       font-size: 11px;
-      color: #484f58;
+      color: #d6d5d433;
       margin-top: 12px;
     }
     .debug-toggle {
       text-align: center;
       font-size: 11px;
-      color: #58a6ff;
+      color: #64a6af;
       cursor: pointer;
       margin-top: 8px;
       text-decoration: underline;
     }
-    .debug-toggle:hover { color: #79c0ff; }
+    .debug-toggle:hover { color: #7ab3bc; }
     .debug-panel {
       display: none;
       margin-top: 12px;
       max-height: 200px;
       overflow-y: auto;
-      background: #0d1117;
-      border: 1px solid #21262d;
+      background: #171615;
+      border: 1px solid rgba(78,153,163,0.08);
       border-radius: 6px;
       padding: 8px;
       font-family: 'Cascadia Code', 'Fira Code', monospace;
       font-size: 10px;
       line-height: 1.5;
-      color: #8b949e;
+      color: #d6d5d480;
     }
     .debug-panel.visible { display: block; }
     .log-entry { margin-bottom: 2px; }
-    .log-time { color: #484f58; }
-    .log-msg { color: #c9d1d9; }
+    .log-time { color: #d6d5d433; }
+    .log-msg { color: #d6d5d4a6; }
   </style>
 </head>
 <body>
