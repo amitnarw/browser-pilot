@@ -3,7 +3,11 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { fileURLToPath } from "url";
 import { logToFile } from "./logger.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const HTTP_PORT = 3026;
 const VERSION = "1.0.0";
@@ -200,6 +204,14 @@ app.use((_req: Request, res: Response, next) => {
 
 app.get("/.identity", (_req: Request, res: Response) => {
   res.json({ identity: "browser-pilot-server", version: VERSION });
+});
+
+// Serve extension files statically for the preview route
+app.use("/extension", express.static(path.join(__dirname, "../../extension")));
+
+// Preview Sandbox Route
+app.get("/preview", (_req: Request, res: Response) => {
+  res.sendFile(path.join(__dirname, "../../extension/preview.html"));
 });
 
 app.get("/status", (_req: Request, res: Response) => {

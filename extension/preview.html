@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BrowserPilot - Sidebar & Pill Preview</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #111;
+      overflow: hidden;
+      display: flex;
+    }
+    
+    /* Simulate a browser tab containing a webpage */
+    #mock-page {
+      flex: 1;
+      background: #fdfdfd;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 40px;
+      text-align: center;
+      overflow: hidden;
+    }
+    
+    h1 {
+      color: #333;
+      margin: 0;
+    }
+    
+    p {
+      color: #666;
+      max-width: 500px;
+      line-height: 1.6;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      background: #eee;
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+    }
+    
+    button {
+      padding: 10px 16px;
+      background: #005bc1;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    button:hover { background: #004493; }
+    button.danger { background: #93000a; }
+    button.danger:hover { background: #690005; }
+    button.outline { background: transparent; border: 1px solid #005bc1; color: #005bc1; }
+    button.outline:hover { background: #e0ecf8; }
+    
+    /* Simulate the Chrome native side panel */
+    #mock-sidebar {
+      width: 320px;
+      height: 100%;
+      border: none;
+      border-left: 1px solid #333;
+      background: #131315;
+      flex-shrink: 0;
+    }
+    
+    /* Quick status indicator for the server connection */
+    #server-status {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      padding: 6px 12px;
+      background: #333;
+      color: #fff;
+      font-size: 12px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #server-status .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #ff4444;
+    }
+    #server-status.connected .dot { background: #00C851; }
+  </style>
+
+  <script>
+    // 1. Mock Chrome Extension API for content.js so it thinks it's running in an extension
+    window.chrome = {
+      runtime: {
+        getURL: function(path) { return "/extension/" + path; },
+        sendMessage: function(msg) {
+          console.log("[Mocked Extension] sendMessage called with:", msg);
+        },
+        onMessage: {
+          addListener: function(callback) {
+            console.log("[Mocked Extension] onMessage listener registered");
+            window._mockExtensionListener = callback;
+          }
+        }
+      }
+    };
+
+    // 2. Helper functions to trigger server state changes
+    async function startSession() {
+      await fetch("http://localhost:3026/sidebar/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskName: "Testing Sidebar & Pill Sync" })
+      });
+    }
+
+    async function endSession() {
+      await fetch("http://localhost:3026/sidebar/end", {
+        method: "POST"
+      });
+    }
+
+    async function simulateAction(type, text) {
+      await fetch("http://localhost:3026/sidebar/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, type })
+      });
+    }
+
+    // Ping server to check if it's alive
+    setInterval(async () => {
+      try {
+        const res = await fetch("http://localhost:3026/.identity");
+        if (res.ok) {
+          document.getElementById("server-status").classList.add("connected");
+          document.getElementById("server-status-text").textContent = "Server Online";
+        }
+      } catch (e) {
+        document.getElementById("server-status").classList.remove("connected");
+        document.getElementById("server-status-text").textContent = "Server Offline (Run: node dist/server/server.min.js)";
+      }
+    }, 2000);
+  </script>
+</head>
+<body>
+  
+  <div id="mock-page">
+    <div id="server-status"><div class="dot"></div><span id="server-status-text">Checking Server...</span></div>
+    
+    <h1>Website Sandbox</h1>
+    <p>This area simulates the normal webpage content. The "Bottom Center Pill" (and full-screen blocking overlay) injected by <code>content.js</code> will appear here when an AI session is active.</p>
+    
+    <div class="controls">
+      <button onclick="startSession()">▶ Start AI Session</button>
+      <button class="danger" onclick="endSession()">⏹ End AI Session</button>
+      <div style="width: 100%; height: 10px;"></div>
+      <button class="outline" onclick="simulateAction('navigate', 'Navigating to Example.com')">+ Action: Navigate</button>
+      <button class="outline" onclick="simulateAction('type', 'Typing into search box')">+ Action: Type</button>
+      <button class="outline" onclick="simulateAction('click', 'Clicking submit button')">+ Action: Click</button>
+    </div>
+    
+    <p style="font-size: 12px; margin-top: 40px; color: #999;">
+      <strong>Note:</strong> Since <code>content.js</code> naturally blocks all mouse clicks while active via the overlay, you won't be able to click these buttons once the session starts until you click the "Take Control" stop button on the pill!
+    </p>
+  </div>
+
+  <!-- Embed the sidebar directly -->
+  <iframe id="mock-sidebar" src="/extension/sidepanel.html"></iframe>
+
+  <!-- Inject the content script, simulating extension injection -->
+  <script src="/extension/content.js"></script>
+</body>
+</html>
