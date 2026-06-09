@@ -654,11 +654,20 @@ async function callChromeDevtoolsTool(
 
     return result as { content: { type: "text"; text: string }[] };
   } catch (err) {
-    // Even on error, keep lock as agent so user can't accidentally interfere
     state.session.status = "ready";
+    
+    const msg = (err as Error).message || String(err);
+    const isDisconnect = msg.includes("fetch failed") || msg.includes("socket") || msg.includes("close") || msg.includes("disconnect") || msg.includes("ECONNREFUSED");
+    
+    if (isDisconnect) {
+      log("Chrome CDP connection lost! Resetting state.", LogLevel.WARN);
+      chromeDevtoolsClient = null;
+      state.chrome.healthy = false;
+      state.session.status = "idle";
+    }
 
     return {
-      content: [{ type: "text" as const, text: "Error: " + (err as Error).message }],
+      content: [{ type: "text" as const, text: "Error: " + msg + (isDisconnect ? "\n\nThe browser disconnected. Your next tool call will automatically restart it." : "") }],
     };
   }
 }
@@ -830,7 +839,7 @@ server.tool(
 // Does NOT kill Chrome or server — session can be resumed on next tool call
 server.tool(
   "browser_done",
-  "Signal that the current task is complete. Hides the sidebar and releases browser control. Call this when you are done with the user's request. The browser stays open and the session can be resumed on the next tool call.",
+  "CRITICAL: You MUST call this tool immediately when you have finished the user's request, before you give your final text response. This releases the lock, hides the AI overlay, and gives control back to the user.",
   {},
   async () => {
     // End sidebar

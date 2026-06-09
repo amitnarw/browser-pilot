@@ -144,6 +144,20 @@
     "  box-shadow: 1px 1px 0 rgba(255,255,255,0.05);",
     "  transform: rotate(45deg);",
     "}",
+    "/* --- FAKE MOUSE CURSOR CSS --- */",
+    "#bp-cursor-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 2147483652; overflow: hidden; display: none; opacity: 1; transition: opacity 0.5s ease; }",
+    "#bp-cursor-layer.visible { display: block; }",
+    "#bp-cursor-layer.fading-out { opacity: 0; }",
+    "#bp-fake-cursor { position: absolute; width: 28px; height: 28px; top: 0; left: 0; transform: translate(50vw, 50vh); transition: transform 0.8s cubic-bezier(0.3, 1, 0.4, 1); filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5)); z-index: 2; }",
+    "#bp-fake-cursor svg { width: 100%; height: 100%; }",
+    ".bp-click-ripple { position: absolute; width: 40px; height: 40px; border-radius: 50%; background: rgba(173, 198, 255, 0.6); transform: translate(-50%, -50%) scale(0); opacity: 1; pointer-events: none; animation: bp-ripple-anim 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; z-index: 1; }",
+    "@keyframes bp-ripple-anim { 0% { transform: translate(-50%, -50%) scale(0); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(2); opacity: 0; } }",
+    "#bp-typing-indicator { position: absolute; top: 20px; left: 20px; background: #2a2a2c; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 4px 8px; display: flex; gap: 4px; align-items: center; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); opacity: 0; transform: translateY(5px); transition: all 0.3s ease; }",
+    "#bp-typing-indicator.visible { opacity: 1; transform: translateY(0); }",
+    ".bp-typing-dot { width: 4px; height: 4px; border-radius: 50%; background: #adc6ff; animation: bp-typing-bounce 1.4s infinite ease-in-out both; }",
+    ".bp-typing-dot:nth-child(1) { animation-delay: -0.32s; }",
+    ".bp-typing-dot:nth-child(2) { animation-delay: -0.16s; }",
+    "@keyframes bp-typing-bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }",
   ].join("\n");
   document.head.appendChild(styleEl);
 
@@ -243,6 +257,22 @@
     container.appendChild(bubble);
 
     overlay.appendChild(container);document.body.appendChild(overlay);
+    
+    if(!document.getElementById("bp-cursor-layer")) {
+      var cursorLayer = document.createElement("div"); cursorLayer.id = "bp-cursor-layer";
+      var cursor = document.createElement("div"); cursor.id = "bp-fake-cursor";
+      cursor.innerHTML = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L6.35 2.86a.5.5 0 0 0-.85.35Z" fill="#131315" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+      var ripple = document.createElement("div"); ripple.className = "bp-click-ripple"; ripple.id = "bp-click-ripple";
+      var typing = document.createElement("div"); typing.id = "bp-typing-indicator";
+      typing.innerHTML = '<div class="bp-typing-dot"></div><div class="bp-typing-dot"></div><div class="bp-typing-dot"></div>';
+      cursor.appendChild(ripple);
+      cursor.appendChild(typing);
+      cursorLayer.appendChild(cursor);
+      document.body.appendChild(cursorLayer);
+    }
+    
+    var cl=document.getElementById("bp-cursor-layer");if(cl)cl.classList.add("visible");
+    
     createGradientAnimation(overlay);startStateCheck();
     
     overlay.addEventListener("click", function(e) {
@@ -294,7 +324,75 @@
     resetIdleTimer();
   }
 
-  function removeOverlay(){if(!overlay)return;stopStateCheck();window.removeEventListener("mousemove", trackEyes);if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;}
+  var lastActionText = "";
+  function handleNewAction(action) {
+    if(!action || action.text === lastActionText) return;
+    lastActionText = action.text;
+    
+    var cursor = document.getElementById("bp-fake-cursor");
+    var typing = document.getElementById("bp-typing-indicator");
+    var ripple = document.getElementById("bp-click-ripple");
+    if(!cursor) return;
+    
+    var cursorLayer = document.getElementById("bp-cursor-layer");
+    if(cursorLayer) {
+      cursorLayer.classList.remove("fading-out");
+      cursorLayer.classList.add("visible");
+      if(cursorLayer._hideTimer) clearTimeout(cursorLayer._hideTimer);
+    }
+    
+    if(typing) typing.classList.remove("visible");
+    
+    var curRect = cursor.getBoundingClientRect();
+    var x = curRect.left || (window.innerWidth / 2);
+    var y = curRect.top || (window.innerHeight / 2);
+    var foundEl = null;
+    
+    if(action.type === "type" || action.type === "fill" || action.type === "keypress") {
+      foundEl = document.activeElement;
+      if(typing) typing.classList.add("visible");
+    } else if(action.type === "click" || action.type === "hover") {
+      var match = action.text.match(/\((.*?)\)/);
+      if(match && match[1]) {
+        var uid = match[1];
+        try {
+          var tagMatch = uid.match(/^([a-zA-Z0-9-]+)\[(\d+)\]$/);
+          if(tagMatch) {
+            var els = document.querySelectorAll(tagMatch[1]);
+            foundEl = els[parseInt(tagMatch[2], 10) - 1] || els[parseInt(tagMatch[2], 10)];
+          } else {
+            foundEl = document.querySelector(uid);
+          }
+        } catch(e){}
+      }
+    }
+    
+    if(foundEl && foundEl !== document.body) {
+      var rect = foundEl.getBoundingClientRect();
+      x = rect.left + rect.width / 2;
+      y = rect.top + rect.height / 2;
+    } else if(action.type === "navigate") {
+      y = 50;
+    }
+    
+    cursor.style.transform = "translate(" + x + "px, " + y + "px)";
+    
+    if(action.type === "click" && ripple) {
+      setTimeout(function(){
+        ripple.style.animation = "none";
+        ripple.offsetHeight;
+        ripple.style.animation = "bp-ripple-anim 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards";
+      }, 500);
+    }
+    
+    if(cursorLayer) {
+      cursorLayer._hideTimer = setTimeout(function() {
+        cursorLayer.classList.add("fading-out");
+      }, 3000);
+    }
+  }
+
+  function removeOverlay(){if(!overlay)return;stopStateCheck();window.removeEventListener("mousemove", trackEyes);if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;var cl=document.getElementById("bp-cursor-layer");if(cl){cl.classList.remove("visible");}}
 
   function showStopDialog() {
     var dOverlay = document.createElement('div');
@@ -349,14 +447,15 @@
     if(msg.type==="LOCK_STATE"){
       var active=!!msg.active;currentTaskName=msg.taskName||currentTaskName;currentActionCount=(msg.actions||[]).length;
       var actionType=msg.lastActionType||"default";
-      if(active){removeBadge();if(lastActiveState!==true){lastActiveState=true;console.log("[BrowserPilot] Session active");createOverlay();}updateStatus(currentTaskName,currentActionCount,actionType);}
+      var lastAction = (msg.actions && msg.actions.length > 0) ? msg.actions[msg.actions.length - 1] : null;
+      if(active){removeBadge();if(lastActiveState!==true){lastActiveState=true;console.log("[BrowserPilot] Session active");createOverlay();}updateStatus(currentTaskName,currentActionCount,actionType);handleNewAction(lastAction);}
       else{if(lastActiveState!==false){lastActiveState=false;console.log("[BrowserPilot] Session ended");clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}
     }
   });
 
   (async function(){
     try{var r=await fetch("http://localhost:3026/sidebar/state");var s=await r.json();lastActiveState=!!s.active;
-    if(s.active){currentTaskName=s.taskName||"";currentActionCount=(s.actions||[]).length;var la=s.actions&&s.actions.length>0?s.actions[s.actions.length-1]:null;lastActionType=la?la.type:"default";createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);}else{showBadge();}}catch(e){showBadge();}
-    setTimeout(async function(){if(lastActiveState)return;try{var r2=await fetch("http://localhost:3026/sidebar/state");var s2=await r2.json();if(s2.active){lastActiveState=true;currentTaskName=s2.taskName||"";currentActionCount=(s2.actions||[]).length;var la2=s2.actions&&s2.actions.length>0?s2.actions[s2.actions.length-1]:null;lastActionType=la2?la2.type:"default";removeBadge();createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);}}catch(x){}},4000);
+    if(s.active){currentTaskName=s.taskName||"";currentActionCount=(s.actions||[]).length;var la=s.actions&&s.actions.length>0?s.actions[s.actions.length-1]:null;lastActionType=la?la.type:"default";createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la);}else{showBadge();}}catch(e){showBadge();}
+    setTimeout(async function(){if(lastActiveState)return;try{var r2=await fetch("http://localhost:3026/sidebar/state");var s2=await r2.json();if(s2.active){lastActiveState=true;currentTaskName=s2.taskName||"";currentActionCount=(s2.actions||[]).length;var la2=s2.actions&&s2.actions.length>0?s2.actions[s2.actions.length-1]:null;lastActionType=la2?la2.type:"default";removeBadge();createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la2);}}catch(x){}},4000);
   })();
 })();
