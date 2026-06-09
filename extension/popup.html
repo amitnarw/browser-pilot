@@ -1,147 +1,106 @@
-﻿<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html class="dark" lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>BrowserPilot</title>
+  <link href="fonts/inter.css" rel="stylesheet" />
+  <link href="fonts/geist.css" rel="stylesheet" />
+  <link href="fonts/outlined.css" rel="stylesheet" />
+  <link href="tailwind.css" rel="stylesheet" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      width: 280px;
-      padding: 16px;
-      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: #171615;
-      color: #d6d5d4;
+    @keyframes neon-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    @keyframes mesh-flow { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+    .bp-premium-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+    .bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: neon-pulse 2s infinite ease-in-out, mesh-flow 4s ease-in-out infinite; border: none; }
+    .bp-orb-eyes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 3px; z-index: 2; transition: transform 0.1s ease-out; transform: translate(var(--eye-x, 0px), var(--eye-y, 0px)); }
+    .bp-orb-eye { width: 4px; height: 4px; background: #adc6ff; border-radius: 50%; animation: orb-blink 4s infinite; box-shadow: 0 0 4px rgba(173,198,255,0.5); }
+    @keyframes orb-blink { 0%, 96%, 98% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+    
+    @keyframes slide-up-fade {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid rgba(78,153,163,0.1);
+    .animate-slide-up {
+      opacity: 0;
+      animation: slide-up-fade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
-    .header .icon {
-      width: 28px;
-      height: 28px;
-      background: linear-gradient(135deg, #4e99a3, #64a6af);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
-    }
-    .header .title {
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .status-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-      font-size: 13px;
-    }
-    .status-row .label { color: #d6d5d480; }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      display: inline-block;
-      margin-right: 6px;
-    }
-    .status-dot.connected { background: #539e55; }
-    .status-dot.disconnected { background: #dc6973; }
-    .task-name {
-      font-size: 12px;
-      color: #4e99a3;
-      background: #1e1d1c;
-      padding: 8px 10px;
-      border-radius: 6px;
-      margin-bottom: 12px;
-      word-break: break-word;
-      border: 1px solid rgba(78,153,163,0.08);
-    }
-    .task-name.no-task { color: #d6d5d433; font-style: italic; }
-    .btn {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid rgba(78,153,163,0.15);
-      border-radius: 8px;
-      background: #1e1d1c;
-      color: #d6d5d4;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .btn:hover { background: rgba(78,153,163,0.08); }
-    .btn:active { background: rgba(78,153,163,0.12); }
-    .btn.primary {
-      background: linear-gradient(135deg, #4e99a3, #64a6af);
-      border-color: #4e99a3;
-    }
-    .btn.primary:hover { background: linear-gradient(135deg, #5aa8b2, #6eb0b9); }
-    .version {
-      text-align: center;
-      font-size: 11px;
-      color: #d6d5d433;
-      margin-top: 12px;
-    }
-    .debug-toggle {
-      text-align: center;
-      font-size: 11px;
-      color: #64a6af;
-      cursor: pointer;
-      margin-top: 8px;
-      text-decoration: underline;
-    }
-    .debug-toggle:hover { color: #7ab3bc; }
-    .debug-panel {
-      display: none;
-      margin-top: 12px;
-      max-height: 200px;
-      overflow-y: auto;
-      background: #171615;
-      border: 1px solid rgba(78,153,163,0.08);
-      border-radius: 6px;
-      padding: 8px;
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 10px;
-      line-height: 1.5;
-      color: #d6d5d480;
-    }
-    .debug-panel.visible { display: block; }
-    .log-entry { margin-bottom: 2px; }
-    .log-time { color: #d6d5d433; }
-    .log-msg { color: #d6d5d4a6; }
+
+    /* Guaranteed Custom UI Styling to replace uncompiled Tailwind */
+    .popup-body { background-color: #09090b; color: #e4e2e4; overflow-x: hidden; display: flex; flex-direction: column; width: 320px; min-height: 280px; padding: 24px; position: relative; }
+    .ambient-glow { position: absolute; top: -80px; right: -80px; width: 256px; height: 256px; background-color: rgba(173, 198, 255, 0.15); border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; }
+    .popup-content-wrapper { position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%; gap: 32px; }
+    .status-text { font-family: monospace; font-size: 10px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.1em; }
+    .directive-label { font-size: 9px; color: #adc6ff; text-transform: uppercase; letter-spacing: 0.2em; font-weight: bold; opacity: 0.8; }
+    .task-text { font-size: 16px; color: rgba(255, 255, 255, 0.9); font-weight: 500; line-height: 1.3; letter-spacing: -0.02em; }
+    .primary-pill-btn { width: 100%; border-radius: 9999px; background: linear-gradient(to bottom, #007aff, #005bc1); color: white; padding: 12px 16px; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 24px rgba(0, 122, 255, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4); cursor: pointer; transition: all 0.3s ease; }
+    .primary-pill-btn:hover { background: linear-gradient(to bottom, #4b8eff, #007aff); box-shadow: 0 12px 32px rgba(0, 122, 255, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.5); transform: translateY(-2px); }
+    .primary-pill-btn:active { transform: scale(0.97); }
+    .ghost-pill-btn { width: 100%; background: transparent; color: rgba(228, 226, 228, 0.7); border-radius: 9999px; padding: 8px 16px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; border: none; }
+    .ghost-pill-btn:hover { background: rgba(255, 255, 255, 0.05); color: white; }
+    .ghost-pill-btn:active { transform: scale(0.98); }
+    .footer-text { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: color 0.2s ease; }
+    .debug-box { max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 9px; line-height: 1.5; color: #c1c6d7; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(12px); padding: 16px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5); }
   </style>
 </head>
-<body>
-    <div class="header">
-      <div class="icon">BP</div>
-      <div class="title">BrowserPilot</div>
+<body class="popup-body font-body-lg">
+  
+  <!-- Ambient Deep Space Glow -->
+  <div class="ambient-glow"></div>
+
+  <!-- Main Content Wrapper -->
+  <div class="popup-content-wrapper">
+    
+    <!-- Top Header & Status -->
+    <div class="flex justify-between items-start w-full animate-slide-up" style="animation-delay: 0s;">
+      <!-- Logo + Orb Group -->
+      <div class="flex items-center gap-3">
+        <div class="bp-premium-wrapper" style="transform: scale(1.1); width: 24px; height: 24px;">
+          <div class="bp-premium-orb">
+            <div class="bp-orb-eyes"><div class="bp-orb-eye"></div><div class="bp-orb-eye"></div></div>
+          </div>
+        </div>
+        <div class="font-bold uppercase text-white/50" style="font-size: 10px; letter-spacing: 0.3em;">BROWSERPILOT</div>
+      </div>
+      
+      <!-- Integrated Status Indicator -->
+      <div class="flex items-center gap-2 mt-1">
+        <span id="status-text" class="status-text">Checking</span>
+        <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-error shadow-[0_0_8px_rgba(255,100,100,0.5)]"></span>
+      </div>
     </div>
 
-  <div class="status-row">
-    <span class="label">Server</span>
-    <span id="connection-status">
-      <span class="status-dot disconnected" id="status-dot"></span>
-      <span id="status-text">Checking...</span>
-    </span>
+    <!-- Central Focus: Active Directive -->
+    <div class="flex flex-col gap-2 animate-slide-up" style="animation-delay: 0.1s;">
+      <span class="directive-label font-label-md">Active Directive</span>
+      <div id="task-display" class="task-text font-body-sm">Awaiting instructions...</div>
+    </div>
+
+    <!-- Action Pill Button -->
+    <div class="flex flex-col gap-3 mt-auto animate-slide-up" style="animation-delay: 0.2s;">
+      <button id="open-sidebar" class="primary-pill-btn font-label-md">
+        <span class="material-symbols-outlined" style="font-size: 18px;" data-icon="dock_to_right">dock_to_right</span>
+        Open Activity Console
+      </button>
+      
+      <!-- Ghost Secondary Button -->
+      <button id="take-control" class="ghost-pill-btn font-label-md">
+        Take Manual Control
+      </button>
+    </div>
+
+    <!-- Sleek Footer -->
+    <div class="flex justify-between items-center animate-slide-up" style="animation-delay: 0.3s; margin-top: -4px;">
+      <div id="debug-toggle" class="footer-text font-label-md text-primary/50 hover:text-primary">Debug Logs</div>
+      <div id="version-display" class="footer-text font-label-md text-on-surface-variant/30">V1.0.0</div>
+    </div>
+    
+    <!-- Hidden Debug Panel -->
+    <div id="debug-section" class="hidden flex-col gap-2 mt-2 animate-slide-up" style="animation-delay: 0s;">
+      <div id="debug-panel" class="debug-box custom-scrollbar font-mono-code"></div>
+    </div>
+    
   </div>
-
-  <div class="status-row">
-    <span class="label">Task</span>
-  </div>
-  <div class="task-name no-task" id="task-display">No active task</div>
-
-  <button class="btn primary" id="open-sidebar">Open Activity Sidebar</button>
-  <button class="btn" id="take-control" style="margin-top:8px;">Take Control</button>
-
-  <div class="debug-toggle" id="debug-toggle">Show Debug Logs</div>
-  <div class="debug-panel" id="debug-panel"></div>
-
-  <div class="version" id="version-display">v1.0.0</div>
 
   <script src="popup.js"></script>
 </body>

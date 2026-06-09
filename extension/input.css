@@ -47,9 +47,9 @@
 
 /* Neon Pulse Animation for AI Core */
 @keyframes neon-pulse {
-    0% { transform: scale(1); box-shadow: 0 0 10px rgba(173, 198, 255, 0.5); }
-    50% { transform: scale(1.1); box-shadow: 0 0 20px rgba(173, 198, 255, 0.8), 0 0 40px rgba(173, 198, 255, 0.4); }
-    100% { transform: scale(1); box-shadow: 0 0 10px rgba(173, 198, 255, 0.5); }
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 .ai-core {
     animation: neon-pulse 2s infinite ease-in-out;

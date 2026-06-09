@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { z } from "zod";
-import { spawn, ChildProcess } from "child_process";
+import { spawn, ChildProcess, execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -335,6 +335,15 @@ function stopHeartbeat(): void {
 
 async function launchChrome(): Promise<boolean> {
   log("Launching Chrome with extension auto-load...");
+
+  // Force kill any stale zombie Chrome processes running this profile
+  // If the user closed Chrome, background processes often stick around and prevent auto-relaunch!
+  try {
+    log("  -> Cleaning up orphaned Chrome processes...");
+    execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*browser-pilot*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
+  } catch {
+    // Ignore errors (usually means no processes found, which is fine)
+  }
 
   let chromeExe: string;
   try {
@@ -868,7 +877,7 @@ server.tool(
 // browser_navigate — go to URL
 server.tool(
   "browser_navigate",
-  "Navigate the browser to a URL. Auto-starts browser if needed. After completing the user's full request, call browser_done to release control.",
+  "Navigate the browser to a URL. Auto-starts browser if needed.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     url: z.string().describe("The URL to navigate to"),
   },
@@ -885,7 +894,7 @@ server.tool(
 // browser_click — click an element
 server.tool(
   "browser_click",
-  "Click an element on the page. Use browser_snapshot first to get element UIDs. After completing the user's full request, call browser_done to release control.",
+  "Click an element on the page. Use browser_snapshot first to get element UIDs.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     uid: z.string().describe("Element UID from snapshot (e.g., 'a[1]', 'button[2]')"),
   },
@@ -902,7 +911,7 @@ server.tool(
 // browser_type — type text (with optional submit key)
 server.tool(
   "browser_type",
-  "Type text into the currently focused element. Optionally press a key after typing to submit forms. After completing the user's full request, call browser_done to release control.",
+  "Type text into the currently focused element. Optionally press a key after typing to submit forms.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     text: z.string().describe("Text to type"),
     submitKey: z.string().optional().describe("Optional key to press after typing (e.g., 'Enter', 'Tab', 'Escape'). Use this to submit forms after typing."),
@@ -933,7 +942,7 @@ server.tool(
 // browser_fill — fill an input field
 server.tool(
   "browser_fill",
-  "Fill a specific input field by element UID. After completing the user's full request, call browser_done to release control.",
+  "Fill a specific input field by element UID.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     uid: z.string().describe("Element UID of the input field"),
     value: z.string().describe("Value to fill in the field"),

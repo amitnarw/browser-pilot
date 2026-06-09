@@ -43,8 +43,8 @@
           '<span class="material-symbols-outlined text-[14px]" data-icon="check">check</span>' +
           '</div>' +
           '<div class="flex flex-col gap-1 pt-0.5">' +
-          '<p class="font-body-sm text-body-sm text-on-surface-variant group-hover:text-on-surface transition-colors">' + escapeHtml(action.text) + '</p>' +
-          '<span class="font-mono-code text-mono-code text-outline text-[11px]">' + formatTime(action.timestamp) + '</span>' +
+          '<p class="font-body-sm text-[12px] text-on-surface-variant group-hover:text-on-surface transition-colors">' + escapeHtml(action.text) + '</p>' +
+          '<span class="font-mono-code text-mono-code text-outline text-[10px]">' + formatTime(action.timestamp) + '</span>' +
           '</div>';
       } else {
         el.className = "flex gap-4 relative group action-item";
@@ -55,7 +55,7 @@
           '<div class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></div>' +
           '</div>' +
           '<div class="glass-card rounded-lg p-3 flex-1 flex flex-col gap-2 -mt-2">' +
-          '<p class="font-body-sm text-body-sm text-on-surface font-medium">' + escapeHtml(action.text) + '</p>' +
+          '<p class="font-body-sm text-[12px] text-on-surface font-medium">' + escapeHtml(action.text) + '</p>' +
           '<div class="flex gap-2">' +
           '<span class="px-2 py-0.5 rounded text-[10px] font-mono-code bg-primary-container/20 text-primary border border-primary/30">Action</span>' +
           '<span class="px-2 py-0.5 rounded text-[10px] font-mono-code bg-surface-container text-on-surface-variant border border-white/5">' + formatTime(action.timestamp) + '</span>' +
@@ -68,7 +68,9 @@
     
     var mainEl = document.querySelector('main');
     if (mainEl) {
-      mainEl.scrollTop = mainEl.scrollHeight;
+      setTimeout(function() {
+        mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: "smooth" });
+      }, 50);
     }
   }
 
@@ -186,6 +188,59 @@
 
   // Initial state: idle
   updateUI({ active: false });
+
+  var haltBtn = document.getElementById("halt-btn");
+  if (haltBtn) {
+    haltBtn.addEventListener("click", function() {
+      showStopDialog();
+    });
+  }
+
+  function showStopDialog() {
+    var dOverlay = document.createElement('div');
+    dOverlay.className = 'bp-dialog-overlay';
+    dOverlay.addEventListener('click', function(e) {
+      if(e.target === dOverlay) dOverlay.remove();
+    });
+
+    var dialog = document.createElement('div');
+    dialog.className = 'bp-dialog';
+    
+    var title = document.createElement('h3');
+    title.className = 'bp-dialog-title';
+    title.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> Halt AI Session?';
+    
+    var desc = document.createElement('p');
+    desc.className = 'bp-dialog-desc';
+    desc.innerText = 'This will end the current task and return control to you.';
+    
+    var actions = document.createElement('div');
+    actions.className = 'bp-dialog-actions';
+    
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'bp-dialog-btn bp-dialog-btn-cancel';
+    cancelBtn.innerText = 'Cancel';
+    cancelBtn.addEventListener('click', function() { dOverlay.remove(); });
+    
+    var stopBtn = document.createElement('button');
+    stopBtn.className = 'bp-dialog-btn bp-dialog-btn-stop';
+    stopBtn.innerText = 'Halt Action';
+    stopBtn.addEventListener('click', function() { 
+      dOverlay.remove(); 
+      fetch(SERVER_URL + "/sidebar/end", { method: "POST" })
+        .catch(function(err) { console.error("[BrowserPilot] Halt error:", err); });
+    });
+    
+    actions.appendChild(cancelBtn);
+    actions.appendChild(stopBtn);
+    
+    dialog.appendChild(title);
+    dialog.appendChild(desc);
+    dialog.appendChild(actions);
+    
+    dOverlay.appendChild(dialog);
+    document.body.appendChild(dOverlay);
+  }
 
   // Connect to SSE
   connectSSE();

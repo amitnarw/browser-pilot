@@ -43,10 +43,8 @@
     "}",
     ".bp-glow-mask {",
     "  position: absolute; top: 0; left: 0; right: 0; bottom: 0;",
-    "  padding: 130px; box-sizing: border-box;",
-    "  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);",
-    "  -webkit-mask-composite: xor;",
-    "  mask-composite: exclude;",
+    "  -webkit-mask-image: radial-gradient(ellipse at center, transparent 40%, black 100%);",
+    "  mask-image: radial-gradient(ellipse at center, transparent 40%, black 100%);",
     "  overflow: hidden;",
     "}",
     ".bp-sharp-mask {",
@@ -60,7 +58,7 @@
     ".bp-gradient-spin {",
     "  position: absolute; top: 50%; left: 50%; width: 200vmax; height: 200vmax;",
     "  margin-top: -100vmax; margin-left: -100vmax;",
-    "  background-image: conic-gradient(from 0turn, transparent 0%, #f472b600 5%, #f472b6 10%, #c084fc 18%, #818cf8 26%, #38bdf8 34%, #2dd4bf 42%, #fbbf24 46%, #fbbf2400 52%, transparent 56%);",
+    "  background-image: conic-gradient(from 0turn, rgba(0,91,193,0) 0%, rgba(0,91,193,0.3) 15%, rgba(0,122,255,0.8) 30%, rgba(173,198,255,1) 45%, rgba(173,198,255,0) 60%, rgba(0,91,193,0) 100%);",
     "  animation: bp-spin 4s linear infinite;",
     "  transform-origin: center;",
     "}",
@@ -81,10 +79,10 @@
     "@keyframes bp-slide-up { from { transform: translateX(-50%) translateY(100px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }",
     "/* --- PREMIUM ORB CSS --- */",
     "@keyframes orb-blink { 0%, 96%, 98% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }",
-    "@keyframes neon-pulse { 0% { transform: scale(1); box-shadow: 0 0 10px rgba(173,198,255,0.5); } 50% { transform: scale(1.1); box-shadow: 0 0 20px rgba(173,198,255,0.8), 0 0 40px rgba(173,198,255,0.4); } 100% { transform: scale(1); box-shadow: 0 0 10px rgba(173,198,255,0.5); } }",
+    "@keyframes neon-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }",
     "@keyframes mesh-flow { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }",
     ".bp-premium-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }",
-    ".bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(75, 142, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(125, 1, 177, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0,91,193,0.4) 0%, rgba(0,122,255,0.4) 100%); background-size: 200% 200%; animation: neon-pulse 2s infinite ease-in-out, mesh-flow 4s ease-in-out infinite; border: none; }",
+    ".bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: neon-pulse 2s infinite ease-in-out, mesh-flow 4s ease-in-out infinite; border: none; }",
     ".bp-orb-eyes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 3px; z-index: 2; transition: transform 0.1s ease-out; transform: translate(var(--eye-x, 0px), var(--eye-y, 0px)); }",
     ".bp-orb-eye { width: 4px; height: 4px; background: #adc6ff; border-radius: 50%; animation: orb-blink 4s infinite; box-shadow: 0 0 4px rgba(173,198,255,0.5); }",
     ".bp-orb-eyes.orb-typing { animation: orb-eyes-dart 1s infinite alternate; }",
@@ -130,6 +128,22 @@
     ".bp-badge-dot { width: 8px; height: 8px; border-radius: 50%; background: #adc6ff; box-shadow: 0 0 8px rgba(173,198,255,0.4); }",
     ".bp-badge-title { font-weight: 600; font-size: 11px; color: #e4e2e4; }",
     ".bp-badge-sub { font-size: 10px; color: #8b90a0; }",
+    ".bp-chat-bubble {",
+    "  position: absolute; bottom: 130%; left: 0px;",
+    "  background: #2a2a2c;",
+    "  padding: 8px 12px; border-radius: 8px;",
+    "  color: #e4e2e4; font-size: 11px; font-weight: 500; font-family: var(--bp-font-family);",
+    "  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05);",
+    "  opacity: 0; transform: translateY(10px); pointer-events: none;",
+    "  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); white-space: nowrap;",
+    "}",
+    ".bp-chat-bubble.visible { opacity: 1; transform: translateY(0); }",
+    ".bp-chat-bubble::after {",
+    "  content: ''; position: absolute; bottom: -4px; left: 24px; width: 10px; height: 10px;",
+    "  background: #2a2a2c;",
+    "  box-shadow: 1px 1px 0 rgba(255,255,255,0.05);",
+    "  transform: rotate(45deg);",
+    "}",
   ].join("\n");
   document.head.appendChild(styleEl);
 
@@ -222,8 +236,24 @@
     btnGroup.appendChild(sb);
     container.appendChild(btnGroup);
 
+    var bubble = document.createElement("div");
+    bubble.className = "bp-chat-bubble";
+    bubble.id = "bp-chat-bubble";
+    bubble.innerText = "AI is working. Click 'Halt' to regain control.";
+    container.appendChild(bubble);
+
     overlay.appendChild(container);document.body.appendChild(overlay);
     createGradientAnimation(overlay);startStateCheck();
+    
+    overlay.addEventListener("click", function(e) {
+      if(e.target === overlay) {
+        if (bubble) {
+          bubble.classList.add("visible");
+          if(bubble._timer) clearTimeout(bubble._timer);
+          bubble._timer = setTimeout(function(){ bubble.classList.remove("visible"); }, 2500);
+        }
+      }
+    });
     
     window.addEventListener("mousemove", trackEyes);
     
@@ -308,12 +338,12 @@
     document.body.appendChild(dOverlay);
   }
 
-  function stopBrowserPilot(){console.log("[BrowserPilot] Stop confirmed");clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();try{chrome.runtime.sendMessage({type:"STOP_BROWSER"});}catch(e){}}
+  function stopBrowserPilot(){console.log("[BrowserPilot] Stop confirmed");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"STOP_BROWSER"});}catch(e){}}
 
-  function showBadge(){if(badge&&document.body.contains(badge))return;badge=document.createElement("div");badge.className="bp-badge";badge.innerHTML='<div class="bp-badge-dot"></div><div><div class="bp-badge-title">BrowserPilot</div><div class="bp-badge-sub">Ready</div></div>';badge.addEventListener("click",function(e){e.stopPropagation();try{chrome.runtime.sendMessage({type:"OPEN_SIDEBAR"});}catch(x){}});document.body.appendChild(badge);}
-  function removeBadge(){if(badge&&badge.parentNode)badge.parentNode.removeChild(badge);badge=null;}
+  function showBadge(){}
+  function removeBadge(){}
 
-  function takeControl(){console.log("[BrowserPilot] Take Control clicked");clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();try{chrome.runtime.sendMessage({type:"USER_TAKEOVER"});}catch(e){}}
+  function takeControl(){console.log("[BrowserPilot] Take Control clicked");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"USER_TAKEOVER"});}catch(e){}}
 
   chrome.runtime.onMessage.addListener(function(msg){
     if(msg.type==="LOCK_STATE"){
