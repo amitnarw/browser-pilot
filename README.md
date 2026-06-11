@@ -15,7 +15,7 @@ Web MCP is published as an NPM package and acts as an MCP (Model Context Protoco
 
 1. **Install Globally**
    ```bash
-   npm install -g web-mcp
+   npm install -g @amitnarw/web-mcp
    ```
 
 2. **Run the Automated Setup**

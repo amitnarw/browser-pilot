@@ -1,5 +1,5 @@
 {
-  "name": "web-mcp",
+  "name": "@amitnarw/web-mcp",
   "version": "0.1.0",
   "description": "AI browser automation sidebar with real-time activity feed",
   "type": "module",
