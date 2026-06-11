@@ -2,14 +2,14 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
 const SERVER_PORT = 3026;
 const CHROME_PORT = 9222;
 
 export async function run(): Promise<void> {
   console.log("");
-  console.log("BrowserPilot Status");
+  console.log("Web MCP Status");
   console.log("===================");
   console.log("");
 
@@ -35,7 +35,7 @@ export async function run(): Promise<void> {
   try {
     const resp = await fetch("http://localhost:" + SERVER_PORT + "/.identity", { signal: AbortSignal.timeout(3000) });
     const data = await resp.json() as any;
-    console.log("         Health: " + (data.identity === "browser-pilot-server" ? "Healthy" : "Unknown"));
+    console.log("         Health: " + (data.identity === "web-mcp-server" ? "Healthy" : "Unknown"));
   } catch {
     console.log("         Health: Not responding");
   }
@@ -64,7 +64,7 @@ export async function run(): Promise<void> {
     if (fs.existsSync(p)) {
       try {
         const config = JSON.parse(fs.readFileSync(p, "utf8"));
-        if (config.mcp && config.mcp["browser-pilot"]) {
+        if (config.mcp && config.mcp["web-mcp"]) {
           opencodeConfigured = true;
           console.log("OpenCode: Configured ✓");
           break;
@@ -73,7 +73,7 @@ export async function run(): Promise<void> {
     }
   }
   if (!opencodeConfigured) {
-    console.log("OpenCode: Not configured (run: browser-pilot setup)");
+    console.log("OpenCode: Not configured (run: web-mcp setup)");
   }
 
   console.log("");

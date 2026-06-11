@@ -1,8 +1,8 @@
-# BrowserPilot - Development Guide
+# Web MCP - Development Guide
 
 ## Project Overview
 
-BrowserPilot is an npm package that gives AI agents (via OpenCode) full browser 
+Web MCP is an npm package that gives AI agents (via OpenCode) full browser 
 automation control with a real-time activity sidebar. It uses MCP (Model Context 
 Protocol) to expose browser tools that AI models can call autonomously.
 
@@ -14,10 +14,10 @@ the AI is controlling the browser (hard lock).
 
 ```powershell
 # Install (one command)
-npm install -g browser-pilot
+npm install -g web-mcp
 
 # Setup (one command)
-browser-pilot setup
+web-mcp setup
 
 # Use (just run OpenCode)
 opencode
@@ -94,14 +94,14 @@ AI calls browser_stop
 - Unified `package.json` with `bin`, `files`, `dependencies`
 - `"type": "module"` for ESM output
 - `tsconfig.json` with `"module": "Node16"` for proper ESM
-- `bin/browser-pilot.js` — CLI entry point (thin wrapper, dynamic imports)
+- `bin/web-mcp.js` — CLI entry point (thin wrapper, dynamic imports)
 - `scripts/bundle.mjs` — esbuild bundler for obfuscated `.min.js` output
 - `.gitignore`, `.npmignore` for clean publishing
 
 ### CLI Commands
-- `browser-pilot setup` — Creates `~/.browser-pilot/` dir, config.json, adds MCP entry to OpenCode config
-- `browser-pilot stop` — Kills server (by PID file) + Chrome (by profile args)
-- `browser-pilot status` — Checks server health, Chrome health, OpenCode config
+- `web-mcp setup` — Creates `~/.web-mcp/` dir, config.json, adds MCP entry to OpenCode config
+- `web-mcp stop` — Kills server (by PID file) + Chrome (by profile args)
+- `web-mcp status` — Checks server health, Chrome health, OpenCode config
 
 ### MCP Wrapper (`src/mcp/wrapper.ts`)
 - **Static tool registration** — All 20 browser tools registered at startup, visible to AI immediately
@@ -124,20 +124,20 @@ AI calls browser_stop
 - Lock state management (agent/user/null)
 - Session endpoints: `/session/start`, `/session/stop`, `/session/lock`, `/session/state`
 - Sidebar endpoints: `/sidebar/start`, `/sidebar/end`, `/sidebar/action`, `/sidebar/state`
-- PID file at `~/.browser-pilot/server.pid`
-- Recordings at `~/.browser-pilot/recordings/`
-- `server/logger.ts` — Persistent file logger with 10MB rotation, 7 files kept at `~/.browser-pilot/logs/server.log`
+- PID file at `~/.web-mcp/server.pid`
+- Recordings at `~/.web-mcp/recordings/`
+- `server/logger.ts` — Persistent file logger with 10MB rotation, 7 files kept at `~/.web-mcp/logs/server.log`
 
 ### Chrome Extension
 - `manifest.json` — MV3, permissions: sidePanel, tabs, activeTab
 - `service_worker.js` — SSE client with periodic reconnection, broadcasts LOCK_STATE to tabs
-- `content.js` — Blocking overlay + status bar (bottom-right). CSS `pointer-events: auto` blocks user mouse/touch. No JS capture listeners (they blocked AI tool events from CDP). Status bar shows: dot + task name + "Take Control" + "Open full →". Idle badge when session inactive.
-- `sidepanel.html/js` — Dark-themed activity feed with lock banner
+- `content.js` — Blocking overlay with Hover.dev-style ambient light sweep + centered status bar. CSS `pointer-events: auto` blocks user mouse/touch. No JS capture listeners (they blocked AI tool events from CDP). Status bar shows: animated premium orb + status text + "Open Sidebar" + "Stop" buttons.
+- `sidepanel.html/js` — Dark-themed activity feed with active task card and dune-wind gradient.
 - `popup.html/js` — Status popup
 
 ### Configuration
-- `~/.browser-pilot/config.json` — Server port, Chrome port, logging level
-- `~/.config/opencode/opencode.json` — MCP entry for BrowserPilot
+- `~/.web-mcp/config.json` — Server port, Chrome port, logging level
+- `~/.config/opencode/opencode.json` — MCP entry for Web MCP
 
 ## What Is Pending
 
@@ -163,14 +163,14 @@ AI calls browser_stop
 ## File Structure
 
 ```
-C:\Users\admin\browser-pilot\
+C:\Users\admin\web-mcp\
 ├── bin/
-│   └── browser-pilot.js          # CLI entry point (ESM, dynamic imports)
+│   └── web-mcp.js          # CLI entry point (ESM, dynamic imports)
 ├── src/
 │   ├── cli/
-│   │   ├── setup.ts              # browser-pilot setup
-│   │   ├── stop.ts               # browser-pilot stop
-│   │   └── status.ts             # browser-pilot status
+│   │   ├── setup.ts              # web-mcp setup
+│   │   ├── stop.ts               # web-mcp stop
+│   │   └── status.ts             # web-mcp status
 │   ├── server/
 │   │   ├── server.ts             # Express HTTP server (port 3026)
 │   │   └── logger.ts             # Persistent file logger with rotation
@@ -241,19 +241,19 @@ C:\Users\admin\browser-pilot\
 - Lines 232-280: Sidebar endpoints (start, end, action, state)
 - Lines 282-362: Sessions history, server listen, graceful shutdown
 
-### content.js — Blocking Overlay + Status Bar
+### content.js — Blocking Overlay + Hover.dev Ambient Light
 - Creates full-page transparent overlay div with `pointer-events: auto`
+- Injects a dual-layer, 4-second rotating conic-gradient (a sharp 2px border trace + a heavily blurred inner glow) to create a premium ambient light sweep.
 - CSS overlay blocks user mouse/touch interactions (no JS capture listeners)
-- Status bar at bottom-right: dot + "BrowserPilot" + task name + "Take Control" + "Open full →"
-- "Take Control" button removes overlay locally
-- "Open full →" opens native side panel via message to service worker
-- Idle badge shown when session inactive (click opens native side panel)
+- Status bar centered at bottom (`bp-action-bar-root`): Premium tracking orb + status text + "Open Sidebar" button + "Stop" button.
+- "Stop" button opens a halt dialog.
+- "Open Sidebar" button sends a message to open the native side panel.
 - Listens for LOCK_STATE messages from service worker
 - Checks initial state on load (with 4-second retry for race conditions)
 
 ## Configuration Files
 
-### ~/.browser-pilot/config.json
+### ~/.web-mcp/config.json
 ```json
 {
   "server": { "port": 3026 },
@@ -266,9 +266,9 @@ C:\Users\admin\browser-pilot\
 ```json
 {
   "mcp": {
-    "browser-pilot": {
+    "web-mcp": {
       "type": "local",
-      "command": ["node", "C:\\Users\\admin\\browser-pilot\\dist\\mcp\\wrapper.js"],
+      "command": ["node", "C:\\Users\\admin\\web-mcp\\dist\\mcp\\wrapper.js"],
       "enabled": true
     }
   }
@@ -288,15 +288,15 @@ npm run bundle
 npm run prepublishOnly
 
 # Test CLI locally
-node bin/browser-pilot.js setup
-node bin/browser-pilot.js status
-node bin/browser-pilot.js stop
+node bin/web-mcp.js setup
+node bin/web-mcp.js status
+node bin/web-mcp.js stop
 
 # Install globally from local dir
 npm install -g .
 
 # Uninstall global
-npm uninstall -g browser-pilot
+npm uninstall -g web-mcp
 
 # Pack for publishing
 npm pack
@@ -356,9 +356,9 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}
 | `browser_done` tool | Explicit completion signal | AI tells us when work is done; overlay hides, lock released |
 | CSS-only blocking | pointer-events:auto | JS capture listeners blocked CDP events (trusted); CSS overlay is sufficient |
 | Session state in server | In-memory | Simple for testing, no persistence needed |
-| PID file at config dir | `~/.browser-pilot/server.pid` | Survives project directory changes |
+| PID file at config dir | `~/.web-mcp/server.pid` | Survives project directory changes |
 | chrome-devtools-mcp as dependency | Regular dependency | Single `npm install` gets everything |
-| Separate Chrome profile | `~/.browser-pilot/chrome-profile/` | Isolated from user's everyday Chrome |
+| Separate Chrome profile | `~/.web-mcp/chrome-profile/` | Isolated from user's everyday Chrome |
 
 ## References
 

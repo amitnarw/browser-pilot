@@ -1,4 +1,4 @@
-﻿(function() {
+(function() {
   "use strict";
 
   var SERVER_URL = "http://localhost:3026";
@@ -31,6 +31,11 @@
 
     if (data.version) {
       versionDisplay.textContent = "v" + data.version;
+    }
+
+    var takeControlBtn = document.getElementById("take-control");
+    if (takeControlBtn) {
+      takeControlBtn.style.display = data.sidebarActive ? "block" : "none";
     }
   }
 
@@ -137,10 +142,51 @@
   // Take control button
   var takeControlBtn = document.getElementById("take-control");
   takeControlBtn.addEventListener("click", function() {
-    chrome.runtime.sendMessage({ type: "USER_TAKEOVER" }, function(response) {
-      if (response && response.success) {
-        window.close();
-      }
+    var dOverlay = document.createElement('div');
+    dOverlay.className = 'bp-dialog-overlay';
+    dOverlay.addEventListener('click', function(e) {
+      if(e.target === dOverlay) dOverlay.remove();
     });
+
+    var dialog = document.createElement('div');
+    dialog.className = 'bp-dialog';
+    
+    var title = document.createElement('h3');
+    title.className = 'bp-dialog-title';
+    title.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> Halt AI Session?';
+    
+    var desc = document.createElement('p');
+    desc.className = 'bp-dialog-desc';
+    desc.innerText = 'This will end the current task and return control to you.';
+    
+    var actions = document.createElement('div');
+    actions.className = 'bp-dialog-actions';
+    
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'bp-dialog-btn bp-dialog-btn-cancel';
+    cancelBtn.innerText = 'Cancel';
+    cancelBtn.addEventListener('click', function() { dOverlay.remove(); });
+    
+    var stopBtn = document.createElement('button');
+    stopBtn.className = 'bp-dialog-btn bp-dialog-btn-stop';
+    stopBtn.innerText = 'Halt Action';
+    stopBtn.addEventListener('click', function() { 
+      dOverlay.remove();
+      chrome.runtime.sendMessage({ type: "STOP_BROWSER" }, function(response) {
+        if (response && response.success) {
+          window.close();
+        }
+      });
+    });
+    
+    actions.appendChild(cancelBtn);
+    actions.appendChild(stopBtn);
+    
+    dialog.appendChild(title);
+    dialog.appendChild(desc);
+    dialog.appendChild(actions);
+    
+    dOverlay.appendChild(dialog);
+    document.body.appendChild(dOverlay);
   });
 })();

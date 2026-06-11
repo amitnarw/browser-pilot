@@ -18,12 +18,12 @@
       break;
     default:
       console.log("");
-      console.log("BrowserPilot - AI browser automation sidebar");
+      console.log("Web MCP - AI browser automation sidebar");
       console.log("");
       console.log("Usage:");
-      console.log("  browser-pilot setup    One-time setup");
-      console.log("  browser-pilot stop     Stop server + Chrome");
-      console.log("  browser-pilot status   Check status");
+      console.log("  web-mcp setup    One-time setup");
+      console.log("  web-mcp stop     Stop server + Chrome");
+      console.log("  web-mcp status   Check status");
       console.log("");
       console.log("After setup, just run: opencode");
       console.log("");

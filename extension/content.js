@@ -13,12 +13,7 @@
   var stateCheckInterval = null;
   var STATE_CHECK_INTERVAL_MS = 5000;
 
-  console.log("[BrowserPilot] Content script loaded on " + window.location.href);
-
-  var cssLink = document.createElement("link");
-  cssLink.rel = "stylesheet";
-  cssLink.href = chrome.runtime.getURL("glow.css");
-  document.head.appendChild(cssLink);
+  console.log("[Web MCP] Content script loaded on " + window.location.href);
 
   var styleEl = document.createElement("style");
   styleEl.textContent = [
@@ -30,12 +25,11 @@
     "  pointer-events: auto; cursor: not-allowed;",
     "  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;",
     "}",
+    "html[data-bp-ai-acting='true'] .bp-overlay, html[data-bp-ai-acting='mouse'] .bp-overlay { pointer-events: none !important; }",
     ".bp-glow-container {",
     "  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;",
     "  z-index: 2147483648; pointer-events: none;",
-    "  -webkit-mask-image: radial-gradient(ellipse 50vw 50vh at center, transparent 0%, black 100%);",
-    "  mask-image: radial-gradient(ellipse 50vw 50vh at center, transparent 0%, black 100%);",
-    "  opacity: 0.8;",
+    "  opacity: 1;",
     "}",
     ".bp-sharp-container {",
     "  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;",
@@ -43,8 +37,8 @@
     "}",
     ".bp-glow-mask {",
     "  position: absolute; top: 0; left: 0; right: 0; bottom: 0;",
-    "  -webkit-mask-image: radial-gradient(ellipse at center, transparent 40%, black 100%);",
-    "  mask-image: radial-gradient(ellipse at center, transparent 40%, black 100%);",
+    "  -webkit-mask-image: radial-gradient(ellipse at center, transparent 40%, black 75%);",
+    "  mask-image: radial-gradient(ellipse at center, transparent 40%, black 75%);",
     "  overflow: hidden;",
     "}",
     ".bp-sharp-mask {",
@@ -58,9 +52,16 @@
     ".bp-gradient-spin {",
     "  position: absolute; top: 50%; left: 50%; width: 200vmax; height: 200vmax;",
     "  margin-top: -100vmax; margin-left: -100vmax;",
-    "  background-image: conic-gradient(from 0turn, rgba(0,91,193,0) 0%, rgba(0,91,193,0.3) 15%, rgba(0,122,255,0.8) 30%, rgba(173,198,255,1) 45%, rgba(173,198,255,0) 60%, rgba(0,91,193,0) 100%);",
     "  animation: bp-spin 4s linear infinite;",
     "  transform-origin: center;",
+    "}",
+    ".bp-glow-spin {",
+    "  background-image: conic-gradient(from 0turn, rgba(173,198,255,1) 0%, rgba(0,122,255,0.7) 10%, rgba(0,91,193,0.3) 25%, transparent 40%, transparent 100%);",
+    "  filter: blur(60px);",
+    "  opacity: 0.7;",
+    "}",
+    ".bp-sharp-spin {",
+    "  background-image: conic-gradient(from 0turn, rgba(173,198,255,1) 0%, rgba(0,122,255,0.9) 5%, rgba(0,91,193,0.5) 15%, transparent 25%, transparent 100%);",
     "}",
     ".bp-action-bar-root, .bp-dialog-overlay {",
     "  --bp-font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;",
@@ -82,7 +83,7 @@
     "@keyframes neon-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }",
     "@keyframes mesh-flow { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }",
     ".bp-premium-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }",
-    ".bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: neon-pulse 2s infinite ease-in-out, mesh-flow 4s ease-in-out infinite; border: none; }",
+    ".bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: mesh-flow 4s ease-in-out infinite; border: none; }",
     ".bp-orb-eyes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 3px; z-index: 2; transition: transform 0.1s ease-out; transform: translate(var(--eye-x, 0px), var(--eye-y, 0px)); }",
     ".bp-orb-eye { width: 4px; height: 4px; background: #adc6ff; border-radius: 50%; animation: orb-blink 4s infinite; box-shadow: 0 0 4px rgba(173,198,255,0.5); }",
     ".bp-orb-eyes.orb-typing { animation: orb-eyes-dart 1s infinite alternate; }",
@@ -129,35 +130,24 @@
     ".bp-badge-title { font-weight: 600; font-size: 11px; color: #e4e2e4; }",
     ".bp-badge-sub { font-size: 10px; color: #8b90a0; }",
     ".bp-chat-bubble {",
-    "  position: absolute; bottom: 130%; left: 0px;",
+    "  position: absolute; bottom: 130%; left: 23px; transform: translateX(-50%) translateY(10px);",
     "  background: #2a2a2c;",
     "  padding: 8px 12px; border-radius: 8px;",
     "  color: #e4e2e4; font-size: 11px; font-weight: 500; font-family: var(--bp-font-family);",
     "  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05);",
-    "  opacity: 0; transform: translateY(10px); pointer-events: none;",
+    "  opacity: 0; pointer-events: auto;",
     "  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); white-space: nowrap;",
+    "  display: flex; gap: 12px; align-items: center;",
     "}",
-    ".bp-chat-bubble.visible { opacity: 1; transform: translateY(0); }",
+    ".bp-chat-bubble.visible { opacity: 1; transform: translateX(-50%) translateY(0); }",
     ".bp-chat-bubble::after {",
-    "  content: ''; position: absolute; bottom: -4px; left: 24px; width: 10px; height: 10px;",
-    "  background: #2a2a2c;",
+    "  content: ''; position: absolute; bottom: -4px; left: 50%; width: 10px; height: 10px;",
+    "  margin-left: -5px; background: #2a2a2c;",
     "  box-shadow: 1px 1px 0 rgba(255,255,255,0.05);",
     "  transform: rotate(45deg);",
     "}",
-    "/* --- FAKE MOUSE CURSOR CSS --- */",
-    "#bp-cursor-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 2147483652; overflow: hidden; display: none; opacity: 1; transition: opacity 0.5s ease; }",
-    "#bp-cursor-layer.visible { display: block; }",
-    "#bp-cursor-layer.fading-out { opacity: 0; }",
-    "#bp-fake-cursor { position: absolute; width: 28px; height: 28px; top: 0; left: 0; transform: translate(50vw, 50vh); transition: transform 0.8s cubic-bezier(0.3, 1, 0.4, 1); filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5)); z-index: 2; }",
-    "#bp-fake-cursor svg { width: 100%; height: 100%; }",
-    ".bp-click-ripple { position: absolute; width: 40px; height: 40px; border-radius: 50%; background: rgba(173, 198, 255, 0.6); transform: translate(-50%, -50%) scale(0); opacity: 1; pointer-events: none; animation: bp-ripple-anim 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; z-index: 1; }",
-    "@keyframes bp-ripple-anim { 0% { transform: translate(-50%, -50%) scale(0); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(2); opacity: 0; } }",
-    "#bp-typing-indicator { position: absolute; top: 20px; left: 20px; background: #2a2a2c; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 4px 8px; display: flex; gap: 4px; align-items: center; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); opacity: 0; transform: translateY(5px); transition: all 0.3s ease; }",
-    "#bp-typing-indicator.visible { opacity: 1; transform: translateY(0); }",
-    ".bp-typing-dot { width: 4px; height: 4px; border-radius: 50%; background: #adc6ff; animation: bp-typing-bounce 1.4s infinite ease-in-out both; }",
-    ".bp-typing-dot:nth-child(1) { animation-delay: -0.32s; }",
-    ".bp-typing-dot:nth-child(2) { animation-delay: -0.16s; }",
-    "@keyframes bp-typing-bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }",
+    ".bp-bubble-stop-btn { background: rgba(147,0,10,0.3); color: #ffb4ab; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: 600; font-family: var(--bp-font-family); transition: background 0.2s; }",
+    ".bp-bubble-stop-btn:hover { background: rgba(147,0,10,0.5); }",
   ].join("\n");
   document.head.appendChild(styleEl);
 
@@ -168,13 +158,13 @@
     
     var glow=document.createElement("div");glow.className="bp-glow-container";
     var glowMask=document.createElement("div");glowMask.className="bp-glow-mask";
-    var glowSpin=document.createElement("div");glowSpin.className="bp-gradient-spin";
+    var glowSpin=document.createElement("div");glowSpin.className="bp-gradient-spin bp-glow-spin";
     glowMask.appendChild(glowSpin);
     glow.appendChild(glowMask);
     
     var sharp=document.createElement("div");sharp.className="bp-sharp-container";
     var sharpMask=document.createElement("div");sharpMask.className="bp-sharp-mask";
-    var sharpSpin=document.createElement("div");sharpSpin.className="bp-gradient-spin";
+    var sharpSpin=document.createElement("div");sharpSpin.className="bp-gradient-spin bp-sharp-spin";
     sharpMask.appendChild(sharpSpin);
     sharp.appendChild(sharpMask);
     
@@ -194,10 +184,34 @@
     }
   }
 
-  function resetIdleTimer(){if(idleTimer)clearTimeout(idleTimer);idleTimer=setTimeout(function(){console.log("[BrowserPilot] Idle timeout");},IDLE_TIMEOUT_MS);}
+  // --- EVENT INTERCEPTION ---
+  // The .bp-overlay natively blocks mouse events with pointer-events: auto.
+  // However, during AI action execution, we temporarily set pointer-events: none 
+  // via CSS (data-bp-ai-acting='true') so the CDP click hits the real element.
+  // We use these JS listeners as a secondary defense, especially for keyboard events.
+  var blockedEvents = ["click", "mousedown", "mouseup", "dblclick", "keydown", "keypress", "keyup"];
+  blockedEvents.forEach(function(evName) {
+    document.addEventListener(evName, function(e) {
+      var acting = document.documentElement.getAttribute("data-bp-ai-acting");
+      if (acting === "true") return; // fallback
+      if (acting === "mouse" && ["click", "mousedown", "mouseup", "dblclick"].includes(e.type)) return;
+      if (acting === "keyboard" && ["keydown", "keypress", "keyup"].includes(e.type)) return;
+      
+      if (lastActiveState === true) {    // Block if AI session is active
+        // Only block if it's NOT a click inside our own BP UI or on the overlay itself
+        var isOwnUI = e.target.closest && e.target.closest(".bp-action-bar-root, .bp-dialog-overlay, .bp-badge, .bp-overlay");
+        if (!isOwnUI) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }
+    }, true); // true = capture phase
+  });
+
+  function resetIdleTimer(){if(idleTimer)clearTimeout(idleTimer);idleTimer=setTimeout(function(){console.log("[Web MCP] Idle timeout");},IDLE_TIMEOUT_MS);}
   function clearIdleTimer(){if(idleTimer)clearTimeout(idleTimer);idleTimer=null;}
 
-  function startStateCheck(){if(stateCheckInterval)clearInterval(stateCheckInterval);stateCheckInterval=setInterval(async function(){if(lastActiveState!==true)return;try{var r=await fetch("http://localhost:3026/sidebar/state");var s=await r.json();if(!s.active){console.log("[BrowserPilot] State check: session ended");lastActiveState=false;clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}catch(e){}},STATE_CHECK_INTERVAL_MS);}
+  function startStateCheck(){if(stateCheckInterval)clearInterval(stateCheckInterval);stateCheckInterval=setInterval(async function(){if(lastActiveState!==true)return;try{var r=await fetch("http://localhost:3026/sidebar/state");var s=await r.json();if(!s.active){console.log("[Web MCP] State check: session ended");lastActiveState=false;clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}catch(e){}},STATE_CHECK_INTERVAL_MS);}
   function stopStateCheck(){if(stateCheckInterval){clearInterval(stateCheckInterval);stateCheckInterval=null;}}
 
   function createOverlay(){
@@ -242,7 +256,7 @@
     
     var sb = document.createElement("button");
     sb.className = "bp-action-btn bp-btn-stop";
-    sb.title = "Stop BrowserPilot";
+    sb.title = "Stop Web MCP";
     sb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><rect x="9" y="9" width="6" height="6" fill="currentColor"></rect></svg>';
     sb.addEventListener("click",function(e){e.stopPropagation();showStopDialog();});
     
@@ -253,34 +267,36 @@
     var bubble = document.createElement("div");
     bubble.className = "bp-chat-bubble";
     bubble.id = "bp-chat-bubble";
-    bubble.innerText = "AI is working. Click 'Halt' to regain control.";
+    
+    var bubbleText = document.createElement("span");
+    bubbleText.className = "bp-bubble-text";
+    bubbleText.id = "bp-bubble-text";
+    bubbleText.innerText = "AI is working...";
+    
+    var bubbleStopBtn = document.createElement("button");
+    bubbleStopBtn.className = "bp-bubble-stop-btn";
+    bubbleStopBtn.id = "bp-bubble-stop-btn";
+    bubbleStopBtn.innerText = "Halt";
+    bubbleStopBtn.style.display = "none";
+    bubbleStopBtn.addEventListener("click", function(e) { e.stopPropagation(); showStopDialog(); });
+
+    bubble.appendChild(bubbleText);
+    bubble.appendChild(bubbleStopBtn);
     container.appendChild(bubble);
 
     overlay.appendChild(container);document.body.appendChild(overlay);
-    
-    if(!document.getElementById("bp-cursor-layer")) {
-      var cursorLayer = document.createElement("div"); cursorLayer.id = "bp-cursor-layer";
-      var cursor = document.createElement("div"); cursor.id = "bp-fake-cursor";
-      cursor.innerHTML = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L6.35 2.86a.5.5 0 0 0-.85.35Z" fill="#131315" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round"/></svg>';
-      var ripple = document.createElement("div"); ripple.className = "bp-click-ripple"; ripple.id = "bp-click-ripple";
-      var typing = document.createElement("div"); typing.id = "bp-typing-indicator";
-      typing.innerHTML = '<div class="bp-typing-dot"></div><div class="bp-typing-dot"></div><div class="bp-typing-dot"></div>';
-      cursor.appendChild(ripple);
-      cursor.appendChild(typing);
-      cursorLayer.appendChild(cursor);
-      document.body.appendChild(cursorLayer);
-    }
-    
-    var cl=document.getElementById("bp-cursor-layer");if(cl)cl.classList.add("visible");
     
     createGradientAnimation(overlay);startStateCheck();
     
     overlay.addEventListener("click", function(e) {
       if(e.target === overlay) {
-        if (bubble) {
+        if (bubble && bubbleText) {
+          bubbleText.innerText = "AI is working. Click 'Halt' to regain control.";
+          var stopBtn = document.getElementById("bp-bubble-stop-btn");
+          if(stopBtn) stopBtn.style.display = "inline-block";
           bubble.classList.add("visible");
-          if(bubble._timer) clearTimeout(bubble._timer);
-          bubble._timer = setTimeout(function(){ bubble.classList.remove("visible"); }, 2500);
+          if(bubble._hideTimer) clearTimeout(bubble._hideTimer);
+          bubble._hideTimer = setTimeout(function(){ bubble.classList.remove("visible"); }, 3000);
         }
       }
     });
@@ -308,7 +324,7 @@
   function updateStatus(taskName,actionCount,actionType){
     var se=document.getElementById("bp-bar-status");
     if(se){
-      var labels={navigate:"navigating",click:"clicking",type:"typing",keypress:"pressing key",fill:"filling",scroll:"scrolling",screenshot:"capturing screenshot",snapshot:"reading page",wait:"waiting",evaluate:"evaluating",tab:"switching tab","default":"working"};
+      var labels={navigate:"navigating",click:"clicking",type:"typing",keypress:"pressing key",fill:"filling",scroll:"scrolling",screenshot:"capturing screenshot",snapshot:"reading page",wait:"waiting",evaluate:"evaluating",tab:"switching tab",hover:"hovering",drag:"dragging","default":"working"};
       se.style.opacity = '0';
       setTimeout(function() {
         se.textContent=(labels[actionType]||"working")+"...";
@@ -329,70 +345,23 @@
     if(!action || action.text === lastActionText) return;
     lastActionText = action.text;
     
-    var cursor = document.getElementById("bp-fake-cursor");
-    var typing = document.getElementById("bp-typing-indicator");
-    var ripple = document.getElementById("bp-click-ripple");
-    if(!cursor) return;
+    var bubble = document.getElementById("bp-chat-bubble");
+    var bubbleText = document.getElementById("bp-bubble-text");
+    var bubbleStopBtn = document.getElementById("bp-bubble-stop-btn");
     
-    var cursorLayer = document.getElementById("bp-cursor-layer");
-    if(cursorLayer) {
-      cursorLayer.classList.remove("fading-out");
-      cursorLayer.classList.add("visible");
-      if(cursorLayer._hideTimer) clearTimeout(cursorLayer._hideTimer);
-    }
-    
-    if(typing) typing.classList.remove("visible");
-    
-    var curRect = cursor.getBoundingClientRect();
-    var x = curRect.left || (window.innerWidth / 2);
-    var y = curRect.top || (window.innerHeight / 2);
-    var foundEl = null;
-    
-    if(action.type === "type" || action.type === "fill" || action.type === "keypress") {
-      foundEl = document.activeElement;
-      if(typing) typing.classList.add("visible");
-    } else if(action.type === "click" || action.type === "hover") {
-      var match = action.text.match(/\((.*?)\)/);
-      if(match && match[1]) {
-        var uid = match[1];
-        try {
-          var tagMatch = uid.match(/^([a-zA-Z0-9-]+)\[(\d+)\]$/);
-          if(tagMatch) {
-            var els = document.querySelectorAll(tagMatch[1]);
-            foundEl = els[parseInt(tagMatch[2], 10) - 1] || els[parseInt(tagMatch[2], 10)];
-          } else {
-            foundEl = document.querySelector(uid);
-          }
-        } catch(e){}
-      }
-    }
-    
-    if(foundEl && foundEl !== document.body) {
-      var rect = foundEl.getBoundingClientRect();
-      x = rect.left + rect.width / 2;
-      y = rect.top + rect.height / 2;
-    } else if(action.type === "navigate") {
-      y = 50;
-    }
-    
-    cursor.style.transform = "translate(" + x + "px, " + y + "px)";
-    
-    if(action.type === "click" && ripple) {
-      setTimeout(function(){
-        ripple.style.animation = "none";
-        ripple.offsetHeight;
-        ripple.style.animation = "bp-ripple-anim 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards";
-      }, 500);
-    }
-    
-    if(cursorLayer) {
-      cursorLayer._hideTimer = setTimeout(function() {
-        cursorLayer.classList.add("fading-out");
-      }, 3000);
+    if(bubble && bubbleText) {
+      bubbleText.innerText = action.text;
+      if(bubbleStopBtn) bubbleStopBtn.style.display = "none";
+      bubble.classList.add("visible");
+      
+      if(bubble._hideTimer) clearTimeout(bubble._hideTimer);
+      bubble._hideTimer = setTimeout(function() {
+        bubble.classList.remove("visible");
+      }, 5000);
     }
   }
 
-  function removeOverlay(){if(!overlay)return;stopStateCheck();window.removeEventListener("mousemove", trackEyes);if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;var cl=document.getElementById("bp-cursor-layer");if(cl){cl.classList.remove("visible");}}
+  function removeOverlay(){if(!overlay)return;stopStateCheck();window.removeEventListener("mousemove", trackEyes);if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;}
 
   function showStopDialog() {
     var dOverlay = document.createElement('div');
@@ -423,7 +392,7 @@
     var stopBtn = document.createElement('button');
     stopBtn.className = 'bp-dialog-btn bp-dialog-btn-stop';
     stopBtn.innerText = 'Halt Action';
-    stopBtn.addEventListener('click', function() { dOverlay.remove(); stopBrowserPilot(); });
+    stopBtn.addEventListener('click', function() { dOverlay.remove(); stopWeb MCP(); });
     
     actions.appendChild(cancelBtn);
     actions.appendChild(stopBtn);
@@ -436,20 +405,20 @@
     document.body.appendChild(dOverlay);
   }
 
-  function stopBrowserPilot(){console.log("[BrowserPilot] Stop confirmed");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"STOP_BROWSER"});}catch(e){}}
+  function stopWeb MCP(){console.log("[Web MCP] Stop confirmed");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"STOP_BROWSER"});}catch(e){}}
 
   function showBadge(){}
   function removeBadge(){}
 
-  function takeControl(){console.log("[BrowserPilot] Take Control clicked");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"USER_TAKEOVER"});}catch(e){}}
+  function takeControl(){console.log("[Web MCP] Take Control clicked");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"USER_TAKEOVER"});}catch(e){}}
 
   chrome.runtime.onMessage.addListener(function(msg){
     if(msg.type==="LOCK_STATE"){
       var active=!!msg.active;currentTaskName=msg.taskName||currentTaskName;currentActionCount=(msg.actions||[]).length;
       var actionType=msg.lastActionType||"default";
       var lastAction = (msg.actions && msg.actions.length > 0) ? msg.actions[msg.actions.length - 1] : null;
-      if(active){removeBadge();if(lastActiveState!==true){lastActiveState=true;console.log("[BrowserPilot] Session active");createOverlay();}updateStatus(currentTaskName,currentActionCount,actionType);handleNewAction(lastAction);}
-      else{if(lastActiveState!==false){lastActiveState=false;console.log("[BrowserPilot] Session ended");clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}
+      if(active){removeBadge();if(lastActiveState!==true){lastActiveState=true;console.log("[Web MCP] Session active");createOverlay();}updateStatus(currentTaskName,currentActionCount,actionType);handleNewAction(lastAction);}
+      else{if(lastActiveState!==false){lastActiveState=false;console.log("[Web MCP] Session ended");clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}
     }
   });
 

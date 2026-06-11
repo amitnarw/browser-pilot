@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "BrowserPilot",
+  "name": "Web MCP",
   "version": "1.0.0",
   "description": "AI browser automation sidebar with real-time activity feed",
   "permissions": [
@@ -24,7 +24,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["glow.css", "sidepanel.html"],
+      "resources": ["sidepanel.html"],
       "matches": ["<all_urls>"]
     }
   ],
@@ -33,6 +33,6 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "BrowserPilot"
+    "default_title": "Web MCP"
   }
 }

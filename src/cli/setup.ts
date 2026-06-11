@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 const DEFAULT_CONFIG = {
@@ -17,7 +17,7 @@ const DEFAULT_CONFIG = {
 
 export async function run(): Promise<void> {
   console.log("");
-  console.log("BrowserPilot Setup");
+  console.log("Web MCP Setup");
   console.log("==================");
   console.log("");
 
@@ -97,21 +97,21 @@ function configureOpenCode(): void {
   const wrapperPath = fs.existsSync(wrapperMinPath) ? wrapperMinPath : wrapperDevPath;
 
   // Check if already configured
-  if (config.mcp["browser-pilot"]) {
-    const existing = config.mcp["browser-pilot"];
+  if (config.mcp["web-mcp"]) {
+    const existing = config.mcp["web-mcp"];
     if (existing.command && existing.command[1] === wrapperPath) {
-      console.log("      BrowserPilot already configured ✓");
+      console.log("      Web MCP already configured ✓");
       return;
     }
   }
 
-  config.mcp["browser-pilot"] = {
+  config.mcp["web-mcp"] = {
     type: "local",
     command: ["node", wrapperPath],
     enabled: true,
   };
 
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-  console.log("      Added browser-pilot entry to OpenCode config ✓");
+  console.log("      Added web-mcp entry to OpenCode config ✓");
   console.log("      Wrapper: " + wrapperPath);
 }

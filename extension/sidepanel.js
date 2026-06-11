@@ -9,7 +9,7 @@
   var idleState = document.getElementById("idle-state");
   var spinner = document.getElementById("spinner");
   var lockBanner = document.getElementById("lock-banner");
-  var taskName = document.getElementById("task-name");
+  var taskName = document.getElementById("current-task");
   var actionsContainer = document.getElementById("actions");
   var debugSection = document.getElementById("debug-section");
   var debugLogs = document.getElementById("debug-logs");
@@ -126,16 +126,16 @@
         lastStateKey = stateKey;
         updateUI(state);
       } catch (err) {
-        console.error("[BrowserPilot] SSE parse error:", err);
+        console.error("[Web MCP] SSE parse error:", err);
       }
     });
 
     eventSource.onopen = function() {
-      console.log("[BrowserPilot] SSE connected");
+      console.log("[Web MCP] SSE connected");
     };
 
     eventSource.onerror = function() {
-      console.log("[BrowserPilot] SSE error — will auto-reconnect");
+      console.log("[Web MCP] SSE error — will auto-reconnect");
     };
   }
 
@@ -227,8 +227,11 @@
     stopBtn.innerText = 'Halt Action';
     stopBtn.addEventListener('click', function() { 
       dOverlay.remove(); 
-      fetch(SERVER_URL + "/sidebar/end", { method: "POST" })
-        .catch(function(err) { console.error("[BrowserPilot] Halt error:", err); });
+      fetch(SERVER_URL + "/session/stop", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ haltedByUser: true })
+      }).catch(function(err) { console.error("[Web MCP] Halt error:", err); });
     });
     
     actions.appendChild(cancelBtn);

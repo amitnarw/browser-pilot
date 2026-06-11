@@ -1,11 +1,11 @@
 {
-  "name": "browser-pilot",
-  "version": "1.0.0",
+  "name": "web-mcp",
+  "version": "0.1.0",
   "description": "AI browser automation sidebar with real-time activity feed",
   "type": "module",
   "main": "dist/mcp/wrapper.min.js",
   "bin": {
-    "browser-pilot": "./bin/browser-pilot.js"
+    "web-mcp": "./bin/web-mcp.js"
   },
   "files": [
     "dist/",
@@ -17,9 +17,9 @@
     "build": "tsc",
     "bundle": "node scripts/bundle.mjs",
     "prepublishOnly": "npm run build && npm run bundle",
-    "setup": "node bin/browser-pilot.js setup",
-    "stop": "node bin/browser-pilot.js stop",
-    "status": "node bin/browser-pilot.js status"
+    "setup": "node bin/web-mcp.js setup",
+    "stop": "node bin/web-mcp.js stop",
+    "status": "node bin/web-mcp.js status"
   },
   "dependencies": {
     "@fontsource/geist-sans": "^5.2.5",

@@ -1,11 +1,11 @@
-﻿var SERVER_URL = "http://localhost:3026";
+var SERVER_URL = "http://localhost:3026";
 var VERSION = "1.0.0";
 var eventSource = null;
 var lastBroadcastKey = null;
 var broadcastCount = 0;
 
 function log(msg) {
-  console.log("[BrowserPilot] " + msg);
+  console.log("[Web MCP] " + msg);
 }
 
 function broadcastToTabs(state) {
@@ -148,6 +148,7 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
     fetch(SERVER_URL + "/session/stop", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ haltedByUser: true })
     })
       .then(function() {
         log("[STOP_BROWSER] Server stopped successfully");

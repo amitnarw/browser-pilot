@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const HTTP_PORT = 3026;
 const VERSION = "1.0.0";
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const RECORDINGS_DIR = path.join(CONFIG_DIR, "recordings");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
 
@@ -57,6 +57,7 @@ let sessionId: string | null = null;
 let sessionDir: string | null = null;
 let sessionData: SessionData | null = null;
 let commandCounter = 0;
+let lastUserHaltTime = 0;
 
 // ─── Log Buffer ──────────────────────────────────────────────────────────
 
@@ -203,7 +204,7 @@ app.use((_req: Request, res: Response, next) => {
 });
 
 app.get("/.identity", (_req: Request, res: Response) => {
-  res.json({ identity: "browser-pilot-server", version: VERSION });
+  res.json({ identity: "web-mcp-server", version: VERSION });
 });
 
 // Serve extension files statically for the preview route
@@ -222,6 +223,7 @@ app.get("/status", (_req: Request, res: Response) => {
     sessionId,
     hasActiveSession: sessionData !== null,
     sessionState: sessionState.status,
+    lastUserHaltTime,
   });
 });
 
@@ -256,7 +258,12 @@ app.post("/session/start", (req: Request, res: Response) => {
   broadcastState();
 });
 
-app.post("/session/stop", (_req: Request, res: Response) => {
+app.post("/session/stop", (req: Request, res: Response) => {
+  const { haltedByUser } = req.body as { haltedByUser?: boolean };
+  if (haltedByUser) {
+    lastUserHaltTime = Date.now();
+  }
+
   sessionState = {
     status: "idle",
     taskName: null,

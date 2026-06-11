@@ -61,7 +61,7 @@ interface ProcessState {
 // ─── Constants ───────────────────────────────────────────────────────────
 
 const CHROME_DEVTOOLS_MCP_PACKAGE = "chrome-devtools-mcp";
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
 
@@ -92,7 +92,7 @@ function log(msg: string, level: LogLevel = LogLevel.INFO): void {
   const configuredLevel = LOG_LEVELS[config?.logging?.level || "info"] || LogLevel.INFO;
   if (level < configuredLevel) return;
 
-  const prefix = "[browser-pilot]";
+  const prefix = "[web-mcp]";
   const levelStr = LogLevel[level].padEnd(5);
   process.stderr.write(`${prefix} [${levelStr}] ${msg}\n`);
 }
@@ -178,14 +178,15 @@ async function fetchWithTimeout(url: string, timeoutMs: number = 3000, options?:
 
 // ─── Health Checks ───────────────────────────────────────────────────────
 
-async function checkServerHealth(): Promise<{ running: boolean; healthy: boolean }> {
+async function checkServerHealth(): Promise<{ healthy: boolean; data?: Record<string, unknown> }> {
   try {
-    const resp = await fetchWithTimeout(`http://localhost:${config.server.port}/.identity`, 3000);
+    const resp = await fetchWithTimeout(`http://localhost:${config.server.port}/status`, 3000);
     const data = await resp.json() as Record<string, unknown>;
-    return { running: true, healthy: data.identity === "browser-pilot-server" };
-  } catch {
-    return { running: false, healthy: false };
-  }
+    if (data && typeof data === "object" && "uptime" in data) {
+      return { healthy: true, data };
+    }
+  } catch {}
+  return { healthy: false };
 }
 
 async function checkChromeHealth(): Promise<{ running: boolean; healthy: boolean }> {
@@ -200,7 +201,7 @@ async function checkChromeHealth(): Promise<{ running: boolean; healthy: boolean
 
 async function waitForHealthy(checkFn: () => Promise<{ healthy: boolean }>, maxWaitMs: number, label: string): Promise<boolean> {
   const start = Date.now();
-  const checkInterval = 1000;
+  const checkInterval = 200;
 
   while (Date.now() - start < maxWaitMs) {
     const result = await checkFn();
@@ -340,7 +341,7 @@ async function launchChrome(): Promise<boolean> {
   // If the user closed Chrome, background processes often stick around and prevent auto-relaunch!
   try {
     log("  -> Cleaning up orphaned Chrome processes...");
-    execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*browser-pilot*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
+    execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
   } catch {
     // Ignore errors (usually means no processes found, which is fine)
   }
@@ -492,7 +493,7 @@ async function connectToChromeDevtoolsMcp(): Promise<boolean> {
     });
 
     chromeDevtoolsClient = new Client(
-      { name: "browser-pilot-wrapper", version: "1.0.0" },
+      { name: "web-mcp-wrapper", version: "1.0.0" },
       { capabilities: {} }
     );
 
@@ -556,6 +557,16 @@ async function ensureBrowserReady(): Promise<{ ok: boolean; error?: string }> {
     } else {
       state.server.running = true;
       state.server.healthy = true;
+      
+      // Check if user recently halted the session
+      if (serverHealth.data && typeof serverHealth.data.lastUserHaltTime === "number") {
+        const timeSinceHalt = Date.now() - serverHealth.data.lastUserHaltTime;
+        if (timeSinceHalt < 10000) {
+          log("[ensureBrowserReady] User halted the session recently. Aborting.");
+          state.session.status = "idle";
+          return { ok: false, error: "The user manually halted the session. You MUST stop execution immediately and await further instructions." };
+        }
+      }
     }
 
     // Start Chrome if needed
@@ -617,9 +628,22 @@ async function ensureBrowserReady(): Promise<{ ok: boolean; error?: string }> {
 async function callChromeDevtoolsTool(
   toolName: string,
   args: Record<string, unknown>,
-  sidebarText: string,
+  sidebarText: string | null,
   sidebarType: string
 ): Promise<{ content: { type: "text"; text: string }[] }> {
+  // Check if the user recently halted the session BEFORE doing anything else
+  const health = await checkServerHealth();
+  if (health.healthy && health.data && typeof health.data.lastUserHaltTime === "number") {
+    const timeSinceHalt = Date.now() - health.data.lastUserHaltTime;
+    if (timeSinceHalt < 10000) {
+      log("[callChromeDevtoolsTool] User halted the session recently. Aborting.");
+      state.session.status = "idle";
+      return {
+        content: [{ type: "text" as const, text: "ERROR: The user manually halted the session. You MUST stop execution immediately and await further instructions." }],
+      };
+    }
+  }
+
   // Ensure browser is ready
   const ready = await ensureBrowserReady();
   if (!ready.ok) {
@@ -641,33 +665,83 @@ async function callChromeDevtoolsTool(
     await httpRequest("POST", "/session/lock", { owner: "agent", action: toolName });
 
     // Log to sidebar
-    await addSidebarAction(sidebarText, sidebarType);
-
-    // Call chrome-devtools-mcp
-    const result = await chromeDevtoolsClient.callTool({
-      name: toolName,
-      arguments: args,
-    });
-
-    // Lock stays "agent" for the entire session — only browser_stop resets it
-    state.session.status = "ready";
-
-    return result as { content: { type: "text"; text: string }[] };
-  } catch (err) {
-    state.session.status = "ready";
-    
-    const msg = (err as Error).message || String(err);
-    const isDisconnect = msg.includes("fetch failed") || msg.includes("socket") || msg.includes("close") || msg.includes("disconnect") || msg.includes("ECONNREFUSED");
-    
-    if (isDisconnect) {
-      log("Chrome CDP connection lost! Resetting state.", LogLevel.WARN);
-      chromeDevtoolsClient = null;
-      state.chrome.healthy = false;
-      state.session.status = "idle";
+    if (sidebarText !== null) {
+      await addSidebarAction(sidebarText, sidebarType);
     }
 
+    // Delay to let the visual fake cursor reach the element before actual execution!
+    // This perfectly synchronizes the UI with the headless browser action.
+    const isMouse = ["click", "hover", "drag"].includes(sidebarType);
+    const isKeyboard = ["type", "fill", "keypress"].includes(sidebarType);
+    let flagSet = false;
+    
+    try {
+      if (isMouse || isKeyboard) {
+        const flagValue = isMouse ? 'mouse' : 'keyboard';
+        // Tell the JS capture listeners and CSS overlay to let the next CDP event through!
+        await chromeDevtoolsClient.callTool({
+          name: "evaluate_script",
+          arguments: { function: `() => { document.documentElement.setAttribute('data-bp-ai-acting', '${flagValue}'); document.documentElement.offsetHeight; }` }
+        }).catch((err) => { console.error("EVALUATE SCRIPT FAILED:", err); });
+        flagSet = true;
+        
+        if (isMouse) {
+          await sleep(500); // Only wait for layout flush and hit-testing if we need to hit-test!
+        }
+      }
+
+      // Call chrome-devtools-mcp
+      const result = await chromeDevtoolsClient.callTool({
+        name: toolName,
+        arguments: args,
+      });
+
+      // Lock stays "agent" for the entire session — only browser_stop resets it
+      state.session.status = "ready";
+
+      const resObj = result as { content: { type: "text"; text: string }[] };
+      if (resObj && Array.isArray(resObj.content)) {
+        resObj.content.push({
+          type: "text",
+          text: "\n\nCRITICAL SYSTEM REMINDER: If you have completely finished the user's request, you MUST call the `browser_done` tool NOW to release control of the browser. If you still have more steps to do, continue."
+        });
+      }
+
+      return resObj;
+    } catch (err) {
+      state.session.status = "ready";
+      
+      const msg = (err as Error).message || String(err);
+      const isDisconnect = msg.includes("fetch failed") || msg.includes("socket") || msg.includes("close") || msg.includes("disconnect") || msg.includes("ECONNREFUSED");
+      
+      if (isDisconnect) {
+        log("Chrome CDP connection lost! Resetting state.", LogLevel.WARN);
+        chromeDevtoolsClient = null;
+        state.chrome.healthy = false;
+        state.session.status = "idle";
+      }
+
+      return {
+        content: [{ type: "text" as const, text: "Error: " + msg + (isDisconnect ? "\n\nThe browser disconnected. Your next tool call will automatically restart it." : "") }],
+      }
+    } finally {
+      if (flagSet && chromeDevtoolsClient) {
+        // Remove the flag so human users are blocked again.
+        // We delay this slightly (100ms) to ensure trailing async events 
+        // (like keyup or React synthetic events) have time to bubble 
+        // through the DOM before the blocker re-engages.
+        await sleep(100);
+        await chromeDevtoolsClient.callTool({
+          name: "evaluate_script",
+          arguments: { function: "() => { document.documentElement.removeAttribute('data-bp-ai-acting'); }" }
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    // This catches errors from httpRequest, addSidebarAction, etc.
+    state.session.status = "ready";
     return {
-      content: [{ type: "text" as const, text: "Error: " + msg + (isDisconnect ? "\n\nThe browser disconnected. Your next tool call will automatically restart it." : "") }],
+      content: [{ type: "text" as const, text: "Error: " + ((err as Error).message || String(err)) }],
     };
   }
 }
@@ -732,7 +806,7 @@ async function cleanup(): Promise<void> {
 // ─── MCP Server ──────────────────────────────────────────────────────────
 
 const server = new McpServer({
-  name: "browser-pilot",
+  name: "web-mcp",
   version: "1.0.0",
 });
 
@@ -869,7 +943,7 @@ server.tool(
     const sessionStateResp = await httpRequest("GET", "/session/state");
 
     const lines = [
-      "=== BrowserPilot Status ===",
+      "=== Web MCP Status ===",
       "",
       "Server: " + (serverHealth.healthy ? "✓ Healthy" : "✗ Not responding") + " (port " + config.server.port + ")",
       "Chrome: " + (chromeHealth.healthy ? "✓ Running" : "✗ Not running") + " (port " + config.chrome.port + ")",
@@ -886,7 +960,7 @@ server.tool(
 // browser_navigate — go to URL
 server.tool(
   "browser_navigate",
-  "Navigate the browser to a URL. Auto-starts browser if needed.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
+  "Navigate the browser to a URL. Auto-starts browser if needed.\n\nCRITICAL INSTRUCTION 1: DO NOT use this tool to cheat or skip steps! You are simulating a real human user. Only use browser_navigate for the initial entry point (e.g., google.com or the app homepage), and then you MUST use browser_click, browser_type, etc., to navigate through the website manually.\n\nCRITICAL INSTRUCTION 2: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     url: z.string().describe("The URL to navigate to"),
   },
@@ -920,7 +994,7 @@ server.tool(
 // browser_type — type text (with optional submit key)
 server.tool(
   "browser_type",
-  "Type text into the currently focused element. Optionally press a key after typing to submit forms.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
+  "Type text into the currently focused element. Optionally press a key after typing to submit forms.\n\nCRITICAL INSTRUCTION 1: This tool DOES NOT take a 'uid' parameter! It blindly types into whatever is currently focused. You MUST use browser_click on an input field first to focus it, before calling this tool! Alternatively, use browser_fill instead.\n\nCRITICAL INSTRUCTION 2: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     text: z.string().describe("Text to type"),
     submitKey: z.string().optional().describe("Optional key to press after typing (e.g., 'Enter', 'Tab', 'Escape'). Use this to submit forms after typing."),
@@ -957,11 +1031,29 @@ server.tool(
     value: z.string().describe("Value to fill in the field"),
   },
   async ({ uid, value }: { uid: string; value: string }) => {
+    // Override chrome-devtools-mcp "fill" because it doesn't trigger React onChange properly
+    // 1. Click to focus (silent)
+    await callChromeDevtoolsTool("click", { uid }, null, "click");
+    
+    // 2. Clear input using JS (triggers React)
+    const clearJs = `() => {
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        el.value = '';
+        const tracker = el._valueTracker;
+        if (tracker) tracker.setValue('');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }`;
+    await callChromeDevtoolsTool("evaluate_script", { function: clearJs }, null, "evaluate");
+    
+    // 3. Type new value
     return callChromeDevtoolsTool(
-      "fill",
-      { uid, value },
-      "Filling: \"" + String(value).substring(0, 30) + "\"",
-      "type"
+      "type_text",
+      { text: value },
+      `Filling (${uid}): "${String(value).substring(0, 30)}"`,
+      "fill"
     );
   }
 );
@@ -979,7 +1071,7 @@ server.tool(
     const dy = direction === "up" ? -pixels : pixels;
     return callChromeDevtoolsTool(
       "evaluate_script",
-      { script: `window.scrollBy(0, ${dy})` },
+      { function: `() => { window.scrollBy(0, ${dy}); }` },
       "Scrolling " + (direction || "down") + " " + pixels + "px",
       "scroll"
     );
@@ -989,7 +1081,7 @@ server.tool(
 // browser_screenshot — take a screenshot
 server.tool(
   "browser_screenshot",
-  "Take a screenshot of the current page.",
+  "Take a screenshot of the current page.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     fullPage: z.boolean().optional().describe("Capture full page (true) or viewport only (false, default)"),
   },
@@ -1006,7 +1098,7 @@ server.tool(
 // browser_snapshot — get page content
 server.tool(
   "browser_snapshot",
-  "Get the current page content as a DOM/accessibility snapshot. Use this to find element UIDs for clicking.",
+  "Get the current page content as a DOM/accessibility snapshot. Use this to find element UIDs for clicking.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {},
   async () => {
     return callChromeDevtoolsTool(
@@ -1021,7 +1113,7 @@ server.tool(
 // browser_press_key — press a keyboard key
 server.tool(
   "browser_press_key",
-  "Press a keyboard key (e.g., Enter, Tab, Escape).",
+  "Press a keyboard key (e.g., Enter, Tab, Escape).\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     key: z.string().describe("Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown')"),
   },
@@ -1070,7 +1162,7 @@ server.tool(
   async ({ script }: { script: string }) => {
     return callChromeDevtoolsTool(
       "evaluate_script",
-      { script },
+      { function: `async () => { ${script} }` },
       "Executing JavaScript",
       "script"
     );
@@ -1151,7 +1243,7 @@ server.tool(
   async () => {
     return callChromeDevtoolsTool(
       "evaluate_script",
-      { script: "window.location.href" },
+      { function: "() => window.location.href" },
       "Getting current URL",
       "default"
     );
@@ -1170,7 +1262,7 @@ server.tool(
       "hover",
       { uid },
       "Hovering over element (" + uid + ")",
-      "default"
+      "hover"
     );
   }
 );
@@ -1187,7 +1279,7 @@ server.tool(
     return callChromeDevtoolsTool(
       "drag",
       { from_uid: fromUid, to_uid: toUid },
-      "Dragging from " + fromUid + " to " + toUid,
+      "Dragging from (" + fromUid + ") to (" + toUid + ")",
       "drag"
     );
   }
@@ -1196,7 +1288,7 @@ server.tool(
 // ─── Main ────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  log("Starting BrowserPilot MCP server...");
+  log("Starting Web MCP MCP server...");
 
   // Load config
   config = loadConfig();

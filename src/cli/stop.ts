@@ -3,12 +3,12 @@ import * as path from "path";
 import * as os from "os";
 import { execSync, spawn } from "child_process";
 
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
 
 export async function run(): Promise<void> {
   console.log("");
-  console.log("BrowserPilot Stop");
+  console.log("Web MCP Stop");
   console.log("=================");
   console.log("");
 
@@ -35,9 +35,9 @@ export async function run(): Promise<void> {
       "powershell -Command \"Get-CimInstance Win32_Process -Filter \\\"Name='chrome.exe'\\\" | Where-Object { $_.CommandLine -like '*" + profileDir + "*' } | Stop-Process -Force -ErrorAction SilentlyContinue\"",
       { timeout: 10000, stdio: "ignore" }
     );
-    console.log("Stopped Chrome instances with BrowserPilot profile");
+    console.log("Stopped Chrome instances with Web MCP profile");
   } catch {
-    console.log("No Chrome instances found with BrowserPilot profile");
+    console.log("No Chrome instances found with Web MCP profile");
   }
 
   console.log("");
