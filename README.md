@@ -9,6 +9,10 @@ Web MCP is a foreground AI browser automation tool designed to act as an **In-Br
 - **Premium UI**: Features a native Chrome Side Panel with a real-time action feed, and a gorgeous Hover.dev-inspired ambient light overlay that activates when the AI takes control.
 - **Human-AI Collision Protection**: Web browsers aren't built for two mice. Web MCP uses an advanced CSS DOM-overlay shield to physically block your hardware mouse clicks from disrupting the AI's synthetic DevTools clicks while it's actively working, gracefully dropping the shield exactly when you need to take control back.
 
+## Prerequisites
+> [!IMPORTANT]
+> **Google Chrome is required** to be installed on your system. Web MCP uses Chrome's remote debugging protocol to control a dedicated browser profile.
+
 ## Installation & Setup
 
 Web MCP is published as an NPM package and acts as an MCP (Model Context Protocol) server.

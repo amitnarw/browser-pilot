@@ -1,10 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import * as readline from "readline";
 
 const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
@@ -15,103 +12,125 @@ const DEFAULT_CONFIG = {
   logging: { level: "info" },
 };
 
-export async function run(): Promise<void> {
-  console.log("");
-  console.log("Web MCP Setup");
-  console.log("==================");
-  console.log("");
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
 
-  // 1. Create config directory
-  console.log("[1/3] Creating config directory...");
+const question = (query: string): Promise<string> => {
+  return new Promise((resolve) => rl.question(query, resolve));
+};
+
+export async function run(): Promise<void> {
+  console.clear();
+  console.log("\x1b[1m\x1b[36mWeb MCP Setup\x1b[0m\n");
+
+  console.log("Creating config directory...");
+  await new Promise((r) => setTimeout(r, 800)); 
+  
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   }
   if (!fs.existsSync(CONFIG_FILE)) {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2));
-    console.log("      Created " + CONFIG_FILE);
-  } else {
-    console.log("      Config already exists");
   }
-  console.log("");
+  console.log("✓ Config directory ready");
 
-  // 2. Configure OpenCode
-  console.log("[2/3] Configuring OpenCode...");
-  configureOpenCode();
-  console.log("");
+  console.log("\nWhich AI client would you like to configure?");
+  console.log("  1. OpenCode");
+  console.log("  2. Claude Desktop");
+  console.log("  3. Claude Code (CLI)");
+  console.log("  4. Cursor");
+  console.log("  5. Antigravity IDE");
+  console.log("  6. Roo Code (Cline)");
+  console.log("  7. Other (Manual Setup)");
+  console.log("  8. Cancel");
 
-  // 3. Done
-  console.log("[3/3] Setup complete!");
-  console.log("");
-  console.log("Next steps:");
-  console.log("  1. Run: opencode");
-  console.log("  2. Ask the AI to browse the web");
-  console.log("  3. The AI will call browser_start to open Chrome");
-  console.log("  4. Chrome extension auto-loads via --load-extension");
-  console.log("");
-}
+  const choice = await question("\nEnter choice (1-8): ");
+  let configPath = "";
 
-function configureOpenCode(): void {
-  // Try common OpenCode config locations
-  const possiblePaths = [
-    path.join(os.homedir(), ".config", "opencode", "opencode.json"),
-    path.join(os.homedir(), ".opencode", "opencode.json"),
-    path.join(os.homedir(), "opencode.json"),
-  ];
-
-  let configPath: string | null = null;
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      configPath = p;
-      break;
+  if (choice === "1") {
+    configPath = path.join(os.homedir(), ".opencode.json"); // Safest cross-platform global path for OpenCode
+  } else if (choice === "2") {
+    if (process.platform === "win32") {
+      configPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude", "claude_desktop_config.json");
+    } else {
+      configPath = path.join(os.homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
     }
-  }
-
-  if (!configPath) {
-    // Create default config
-    configPath = possiblePaths[0];
-    const configDir = path.dirname(configPath);
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
+  } else if (choice === "3") {
+    configPath = path.join(os.homedir(), ".claude.json");
+  } else if (choice === "4") {
+    configPath = path.join(os.homedir(), ".cursor", "mcp.json");
+  } else if (choice === "5") {
+    configPath = path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json");
+  } else if (choice === "6") {
+    if (process.platform === "win32") {
+      configPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
+    } else if (process.platform === "darwin") {
+      configPath = path.join(os.homedir(), "Library", "Application Support", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
+    } else {
+      configPath = path.join(os.homedir(), ".config", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
     }
-    console.log("      No OpenCode config found, creating at " + configPath);
+  } else if (choice === "7") {
+    console.log("\nTo manually install Web MCP in your client, add the following configuration to your MCP settings file:\n");
+    const manualConfig = {
+      "mcpServers": {
+        "web-mcp": {
+          "command": "npx",
+          "args": ["-y", "@amitnarw/web-mcp", "mcp"]
+        }
+      }
+    };
+    console.log(JSON.stringify(manualConfig, null, 2) + "\n");
+    rl.close();
+    return;
   } else {
-    console.log("      Found config at " + configPath);
+    console.log("Setup cancelled.");
+    rl.close();
+    return;
   }
 
-  // Read or create config
+  console.log(`\nConfiguring ${configPath}...`);
+  await new Promise((r) => setTimeout(r, 1000));
+  
+  const configDir = path.dirname(configPath);
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
   let config: Record<string, any> = {};
   if (fs.existsSync(configPath)) {
     try {
       config = JSON.parse(fs.readFileSync(configPath, "utf8"));
     } catch {
-      console.log("      WARNING: Could not parse config, will overwrite");
+      // Ignore
     }
   }
 
-  if (!config.mcp) config.mcp = {};
-
-  // Calculate wrapper path (relative to this CLI file's compiled output)
-  // Use .min.js (bundled) if available, otherwise fall back to .js (development)
-  const wrapperMinPath = path.join(__dirname, "..", "mcp", "wrapper.min.js");
-  const wrapperDevPath = path.join(__dirname, "..", "mcp", "wrapper.js");
-  const wrapperPath = fs.existsSync(wrapperMinPath) ? wrapperMinPath : wrapperDevPath;
-
-  // Check if already configured
-  if (config.mcp["web-mcp"]) {
-    const existing = config.mcp["web-mcp"];
-    if (existing.command && existing.command[1] === wrapperPath) {
-      console.log("      Web MCP already configured ✓");
-      return;
-    }
+  if (!config.mcpServers) config.mcpServers = {};
+  
+  if (choice === "1") {
+    if (!config.mcp) config.mcp = {};
+    config.mcp["web-mcp"] = {
+      type: "local",
+      command: ["npx", "-y", "@amitnarw/web-mcp", "mcp"],
+      enabled: true,
+    };
+  } else {
+    config.mcpServers["web-mcp"] = {
+      command: "npx",
+      args: ["-y", "@amitnarw/web-mcp", "mcp"],
+    };
   }
-
-  config.mcp["web-mcp"] = {
-    type: "local",
-    command: ["node", wrapperPath],
-    enabled: true,
-  };
 
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-  console.log("      Added web-mcp entry to OpenCode config ✓");
-  console.log("      Wrapper: " + wrapperPath);
+  
+  console.log(`✓ Added web-mcp to ${configPath}\n`);
+  
+  console.log("Setup complete!\n");
+  console.log("Next steps:");
+  console.log("  1. Restart your AI client");
+  console.log("  2. Ask the AI: \"Go to google.com and search for Opencode\"");
+  
+  rl.close();
 }
