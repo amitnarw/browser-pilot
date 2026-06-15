@@ -4,8 +4,18 @@ import * as os from "os";
 
 const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
-const SERVER_PORT = 3026;
-const CHROME_PORT = 9222;
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+
+let SERVER_PORT = 3026;
+let CHROME_PORT = 9222;
+
+if (fs.existsSync(CONFIG_FILE)) {
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    if (config?.server?.port) SERVER_PORT = config.server.port;
+    if (config?.chrome?.port) CHROME_PORT = config.chrome.port;
+  } catch {}
+}
 
 export async function getStatus(): Promise<string[]> {
   const lines: string[] = [];

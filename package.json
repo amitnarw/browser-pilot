@@ -1,6 +1,6 @@
 {
   "name": "@amitnarw/web-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Premium browser automation MCP server with dynamic visual overlay",
   "type": "module",
   "main": "dist/mcp/wrapper.min.js",

@@ -1,7 +1,8 @@
 (function() {
   "use strict";
 
-  var SERVER_URL = "http://localhost:3026";
+  var port = globalThis.WEB_MCP_PORT || 3026;
+  var SERVER_URL = "http://localhost:" + port;
   var eventSource = null;
   var lastStateKey = null;
 

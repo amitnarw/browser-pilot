@@ -9,9 +9,20 @@ import { logToFile } from "./logger.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const HTTP_PORT = 3026;
 const VERSION = "1.0.0";
 const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+
+let HTTP_PORT = 3026;
+if (fs.existsSync(CONFIG_FILE)) {
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    if (config?.server?.port) {
+      HTTP_PORT = config.server.port;
+    }
+  } catch {}
+}
+
 const RECORDINGS_DIR = path.join(CONFIG_DIR, "recordings");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
 

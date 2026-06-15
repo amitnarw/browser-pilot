@@ -211,7 +211,7 @@
   function resetIdleTimer(){if(idleTimer)clearTimeout(idleTimer);idleTimer=setTimeout(function(){console.log("[Web MCP] Idle timeout");},IDLE_TIMEOUT_MS);}
   function clearIdleTimer(){if(idleTimer)clearTimeout(idleTimer);idleTimer=null;}
 
-  function startStateCheck(){if(stateCheckInterval)clearInterval(stateCheckInterval);stateCheckInterval=setInterval(async function(){if(lastActiveState!==true)return;try{var r=await fetch("http://localhost:3026/sidebar/state");var s=await r.json();if(!s.active){console.log("[Web MCP] State check: session ended");lastActiveState=false;clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}catch(e){}},STATE_CHECK_INTERVAL_MS);}
+  function startStateCheck(){if(stateCheckInterval)clearInterval(stateCheckInterval);stateCheckInterval=setInterval(async function(){if(lastActiveState!==true)return;try{var port=globalThis.WEB_MCP_PORT||3026;var r=await fetch("http://localhost:"+port+"/sidebar/state");var s=await r.json();if(!s.active){console.log("[Web MCP] State check: session ended");lastActiveState=false;clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}catch(e){}},STATE_CHECK_INTERVAL_MS);}
   function stopStateCheck(){if(stateCheckInterval){clearInterval(stateCheckInterval);stateCheckInterval=null;}}
 
   function createOverlay(){
@@ -284,7 +284,7 @@
     bubble.appendChild(bubbleStopBtn);
     container.appendChild(bubble);
 
-    overlay.appendChild(container);document.body.appendChild(overlay);
+    overlay.appendChild(container);(document.body||document.documentElement).appendChild(overlay);
     
     createGradientAnimation(overlay);startStateCheck();
     
@@ -423,8 +423,8 @@
   });
 
   (async function(){
-    try{var r=await fetch("http://localhost:3026/sidebar/state");var s=await r.json();lastActiveState=!!s.active;
-    if(s.active){currentTaskName=s.taskName||"";currentActionCount=(s.actions||[]).length;var la=s.actions&&s.actions.length>0?s.actions[s.actions.length-1]:null;lastActionType=la?la.type:"default";createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la);}else{showBadge();}}catch(e){showBadge();}
-    setTimeout(async function(){if(lastActiveState)return;try{var r2=await fetch("http://localhost:3026/sidebar/state");var s2=await r2.json();if(s2.active){lastActiveState=true;currentTaskName=s2.taskName||"";currentActionCount=(s2.actions||[]).length;var la2=s2.actions&&s2.actions.length>0?s2.actions[s2.actions.length-1]:null;lastActionType=la2?la2.type:"default";removeBadge();createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la2);}}catch(x){}},4000);
+    try{var port=globalThis.WEB_MCP_PORT||3026;var r=await fetch("http://localhost:"+port+"/sidebar/state");var s=await r.json();lastActiveState=!!s.active;
+    if(s.active){currentTaskName=s.taskName||"";currentActionCount=(s.actions||[]).length;var la=s.actions&&s.actions.length>0?s.actions[s.actions.length-1]:null;lastActionType=la?la.type:"default";createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la);}else{showBadge();}}catch(e){}
+    setTimeout(async function(){if(lastActiveState)return;try{var port=globalThis.WEB_MCP_PORT||3026;var r2=await fetch("http://localhost:"+port+"/sidebar/state");var s2=await r2.json();if(s2.active){lastActiveState=true;currentTaskName=s2.taskName||"";currentActionCount=(s2.actions||[]).length;var la2=s2.actions&&s2.actions.length>0?s2.actions[s2.actions.length-1]:null;lastActionType=la2?la2.type:"default";removeBadge();createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la2);}}catch(x){}},4000);
   })();
 })();

@@ -1,4 +1,6 @@
-var SERVER_URL = "http://localhost:3026";
+importScripts("env.js");
+var port = globalThis.WEB_MCP_PORT || 3026;
+var SERVER_URL = "http://localhost:" + port;
 var VERSION = "1.0.0";
 var eventSource = null;
 var lastBroadcastKey = null;

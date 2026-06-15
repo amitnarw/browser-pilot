@@ -220,9 +220,18 @@ async function waitForHealthy(checkFn: () => Promise<{ healthy: boolean }>, maxW
 
 function findChromePath(): string {
   const paths = [
+    // Windows
     path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
     path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
     path.join(os.homedir(), "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe"),
+    // macOS
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    path.join(os.homedir(), "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+    // Linux
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser"
   ];
 
   for (const p of paths) {
@@ -341,7 +350,11 @@ async function launchChrome(): Promise<boolean> {
   // If the user closed Chrome, background processes often stick around and prevent auto-relaunch!
   try {
     log("  -> Cleaning up orphaned Chrome processes...");
-    execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
+    if (process.platform === "win32") {
+      execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
+    } else {
+      execSync(`pkill -f "chrome.*\\.web-mcp/chrome-profile"`, { stdio: "ignore" });
+    }
   } catch {
     // Ignore errors (usually means no processes found, which is fine)
   }
@@ -376,10 +389,27 @@ async function launchChrome(): Promise<boolean> {
     // Ignore — Chrome will still work, just might use cached files
   }
 
+  // Create a safe, user-owned copy of the extension directory
+  // This prevents EACCES permission denied errors if the package was installed globally via root (sudo npm install -g)
+  const userExtensionDir = path.join(CONFIG_DIR, "extension");
+  try {
+    if (fs.existsSync(userExtensionDir)) fs.rmSync(userExtensionDir, { recursive: true, force: true });
+    fs.cpSync(extensionDir, userExtensionDir, { recursive: true });
+  } catch (err) {
+    log("WARNING: Failed to copy extension directory to " + userExtensionDir + ": " + (err as Error).message, LogLevel.WARN);
+  }
+
+  // Inject environment variables into extension before loading
+  try {
+    fs.writeFileSync(path.join(userExtensionDir, "env.js"), `globalThis.WEB_MCP_PORT = ${config.server.port};\n`);
+  } catch (err) {
+    log("WARNING: Failed to write env.js: " + (err as Error).message, LogLevel.WARN);
+  }
+
   const args = [
     `--remote-debugging-port=${config.chrome.port}`,
     `--user-data-dir=${profileDir}`,
-    `--load-extension=${extensionDir}`,
+    `--load-extension=${userExtensionDir}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-popup-blocking",

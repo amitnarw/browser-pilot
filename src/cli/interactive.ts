@@ -28,7 +28,12 @@ export async function run() {
   
   process.stdout.write("\x1b[?1049h\x1b[?25l\x1b[?1002h\x1b[?1015h\x1b[?1006h");
   
-  process.stdin.setRawMode(true);
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+  } else {
+    console.log("Interactive mode requires a TTY. Please run this command in a terminal.");
+    process.exit(1);
+  }
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
 
@@ -341,7 +346,9 @@ export async function run() {
       clearInterval(renderLoop);
       if (escTimeout) clearTimeout(escTimeout);
       process.stdin.off("data", onData);
-      process.stdin.setRawMode(false);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
       process.stdin.pause();
       process.stdout.write("\x1b[?1049l\x1b[?1002l\x1b[?1015l\x1b[?1006l\x1b[?25h\n");
     }

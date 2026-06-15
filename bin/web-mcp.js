@@ -1,28 +1,33 @@
 #!/usr/bin/env node
 
 (async function() {
-  var command = process.argv[2];
+  const command = process.argv[2];
 
   if (!command) {
-    var interactive = await import("../dist/cli/interactive.min.js");
+    const interactive = await import("../dist/cli/interactive.min.js");
     await interactive.run();
   } else {
     switch (command) {
       case "mcp":
         await import("../dist/mcp/wrapper.min.js");
         break;
-      case "setup":
-        var setup = await import("../dist/cli/setup.min.js");
-        await setup.run();
+      case "setup": {
+        const interactive = await import("../dist/cli/interactive.min.js");
+        await interactive.run();
         break;
-      case "stop":
-        var stop = await import("../dist/cli/stop.min.js");
-        await stop.run();
+      }
+      case "stop": {
+        const stop = await import("../dist/cli/stop.min.js");
+        const lines = await stop.stopProcesses();
+        console.log(lines.join("\n"));
         break;
-      case "status":
-        var status = await import("../dist/cli/status.min.js");
-        await status.run();
+      }
+      case "status": {
+        const status = await import("../dist/cli/status.min.js");
+        const lines = await status.getStatus();
+        console.log(lines.join("\n"));
         break;
+      }
       default:
         console.log("");
         console.log("Web MCP - AI browser automation sidebar");
