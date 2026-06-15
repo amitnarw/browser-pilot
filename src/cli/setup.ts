@@ -1,7 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import * as readline from "readline";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
@@ -12,21 +15,190 @@ const DEFAULT_CONFIG = {
   logging: { level: "info" },
 };
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+export const SETUP_OPTIONS = [
+  { value: "opencode", label: "OpenCode" },
+  { value: "claude-desktop", label: "Claude Desktop" },
+  { value: "claude-code", label: "Claude Code (CLI)" },
+  { value: "cursor", label: "Cursor" },
+  { value: "antigravity", label: "Antigravity IDE" },
+  { value: "roo-code", label: "Roo Code (Cline)" },
+  { value: "manual", label: "Other (Manual Setup)" },
+  { value: "cancel", label: "Cancel" }
+];
 
-const question = (query: string): Promise<string> => {
-  return new Promise((resolve) => rl.question(query, resolve));
-};
+export const UNINSTALL_OPTIONS = [
+  { value: "all", label: "Uninstall from ALL clients" },
+  { value: "opencode", label: "OpenCode" },
+  { value: "claude-desktop", label: "Claude Desktop" },
+  { value: "claude-code", label: "Claude Code (CLI)" },
+  { value: "cursor", label: "Cursor" },
+  { value: "antigravity", label: "Antigravity IDE" },
+  { value: "roo-code", label: "Roo Code (Cline)" },
+  { value: "cancel", label: "Cancel" }
+];
 
-export async function run(): Promise<void> {
-  console.clear();
-  console.log("\x1b[1m\x1b[36mWeb MCP Setup\x1b[0m\n");
+function getConfigPath(choiceValue: string): string {
+  if (choiceValue === "opencode") {
+    // OpenCode stores its global config here
+    return path.join(os.homedir(), ".config", "opencode", "opencode.json");
+  } else if (choiceValue === "claude-desktop") {
+    if (process.platform === "win32") {
+      return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude", "claude_desktop_config.json");
+    } else {
+      return path.join(os.homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
+    }
+  } else if (choiceValue === "claude-code") {
+    return path.join(os.homedir(), ".claude.json");
+  } else if (choiceValue === "cursor") {
+    return path.join(os.homedir(), ".cursor", "mcp.json");
+  } else if (choiceValue === "antigravity") {
+    return path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json");
+  } else if (choiceValue === "roo-code") {
+    if (process.platform === "win32") {
+      return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
+    } else if (process.platform === "darwin") {
+      return path.join(os.homedir(), "Library", "Application Support", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
+    } else {
+      return path.join(os.homedir(), ".config", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
+    }
+  }
+  return "";
+}
 
-  console.log("Creating config directory...");
-  await new Promise((r) => setTimeout(r, 800)); 
+export function getConfiguredClients(): string[] {
+  const configured: string[] = [];
+  
+  for (const opt of SETUP_OPTIONS) {
+    if (opt.value === "manual" || opt.value === "cancel") continue;
+    
+    const p = getConfigPath(opt.value);
+    if (p && fs.existsSync(p)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(p, "utf8"));
+        if (opt.value === "opencode" && config?.mcp?.["web-mcp"]) {
+          configured.push(opt.value);
+        } else if (config?.mcpServers?.["web-mcp"]) {
+          configured.push(opt.value);
+        }
+      } catch {}
+    }
+  }
+  
+  return configured;
+}
+
+export async function testConfigurations(): Promise<string[]> {
+  const lines: string[] = [];
+  lines.push("\x1b[1mConfiguration Test Report\x1b[0m");
+  lines.push("\x1b[90m=========================\x1b[0m");
+  
+  let anyFound = false;
+
+  for (const opt of SETUP_OPTIONS) {
+    if (opt.value === "manual" || opt.value === "cancel") continue;
+    
+    const p = getConfigPath(opt.value);
+    if (!p) continue;
+    
+    if (fs.existsSync(p)) {
+      let status = "";
+      try {
+        const content = fs.readFileSync(p, "utf8");
+        const config = JSON.parse(content);
+        
+        let mcpDef = null;
+        if (opt.value === "opencode") {
+          mcpDef = config?.mcp?.["web-mcp"];
+        } else {
+          mcpDef = config?.mcpServers?.["web-mcp"];
+        }
+        
+        if (!mcpDef) {
+          status = "\x1b[33mFile exists, but web-mcp not added\x1b[0m";
+        } else {
+          const isCommandValid = (opt.value === "opencode" && Array.isArray(mcpDef.command) && mcpDef.command.includes("npx")) ||
+                                 (mcpDef.command === "npx");
+          if (isCommandValid) {
+            status = "\x1b[32mWorking [✓]\x1b[0m";
+            anyFound = true;
+          } else {
+            status = "\x1b[31mBroken (Invalid command syntax)\x1b[0m";
+          }
+        }
+      } catch (e) {
+        status = "\x1b[31mBroken (Invalid JSON format)\x1b[0m";
+      }
+      lines.push(`${opt.label.padEnd(20)} : ${status}`);
+    } else {
+      lines.push(`${opt.label.padEnd(20)} : \x1b[90mNot Installed / No Config File\x1b[0m`);
+    }
+  }
+  
+  if (anyFound) {
+    lines.push("");
+    lines.push("\x1b[32mAll working clients are ready to use!\x1b[0m");
+  }
+
+  return lines;
+}
+
+export async function uninstallClient(choiceValue: string): Promise<string[]> {
+  const lines: string[] = [];
+  lines.push("\x1b[1mUninstall Report\x1b[0m");
+  lines.push("\x1b[90m=========================\x1b[0m");
+
+  const clientsToRemove = choiceValue === "all" 
+    ? SETUP_OPTIONS.map(o => o.value).filter(v => v !== "manual" && v !== "cancel") 
+    : [choiceValue];
+
+  let removedCount = 0;
+
+  for (const client of clientsToRemove) {
+    const p = getConfigPath(client);
+    if (!p || !fs.existsSync(p)) continue;
+
+    try {
+      const content = fs.readFileSync(p, "utf8");
+      const config = JSON.parse(content);
+      let modified = false;
+
+      if (client === "opencode") {
+        if (config?.mcp?.["web-mcp"]) {
+          delete config.mcp["web-mcp"];
+          modified = true;
+        }
+        // Fix strict validation crash caused by previous buggy setups
+        if (config.hasOwnProperty("mcpServers")) {
+          delete config.mcpServers;
+          modified = true;
+        }
+      } else if (config?.mcpServers?.["web-mcp"]) {
+        delete config.mcpServers["web-mcp"];
+        modified = true;
+      }
+
+      if (modified) {
+        fs.writeFileSync(p, JSON.stringify(config, null, 2));
+        lines.push(`\x1b[32m✓ Removed from ${client}\x1b[0m`);
+        removedCount++;
+      }
+    } catch (e) {
+      lines.push(`\x1b[31m✗ Failed to process ${client}\x1b[0m`);
+    }
+  }
+
+  if (removedCount === 0) {
+    lines.push("\x1b[33mNo web-mcp configurations found to remove.\x1b[0m");
+  } else {
+    lines.push("");
+    lines.push("\x1b[32mUninstall complete. Please restart your AI clients.\x1b[0m");
+  }
+
+  return lines;
+}
+
+export async function configureClient(choiceValue: string): Promise<string[]> {
+  const lines: string[] = [];
   
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
@@ -34,65 +206,26 @@ export async function run(): Promise<void> {
   if (!fs.existsSync(CONFIG_FILE)) {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2));
   }
-  console.log("✓ Config directory ready");
 
-  console.log("\nWhich AI client would you like to configure?");
-  console.log("  1. OpenCode");
-  console.log("  2. Claude Desktop");
-  console.log("  3. Claude Code (CLI)");
-  console.log("  4. Cursor");
-  console.log("  5. Antigravity IDE");
-  console.log("  6. Roo Code (Cline)");
-  console.log("  7. Other (Manual Setup)");
-  console.log("  8. Cancel");
+  const configPath = getConfigPath(choiceValue);
 
-  const choice = await question("\nEnter choice (1-8): ");
-  let configPath = "";
-
-  if (choice === "1") {
-    configPath = path.join(os.homedir(), ".opencode.json"); // Safest cross-platform global path for OpenCode
-  } else if (choice === "2") {
-    if (process.platform === "win32") {
-      configPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude", "claude_desktop_config.json");
-    } else {
-      configPath = path.join(os.homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
+  if (choiceValue === "manual") {
+    lines.push("\x1b[1mManual Setup Instructions\x1b[0m");
+    lines.push("Add the following to your MCP settings file:");
+    lines.push("");
+    lines.push(`{
+  "mcpServers": {
+    "web-mcp": {
+      "command": "npx",
+      "args": ["-y", "@amitnarw/web-mcp", "mcp"]
     }
-  } else if (choice === "3") {
-    configPath = path.join(os.homedir(), ".claude.json");
-  } else if (choice === "4") {
-    configPath = path.join(os.homedir(), ".cursor", "mcp.json");
-  } else if (choice === "5") {
-    configPath = path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json");
-  } else if (choice === "6") {
-    if (process.platform === "win32") {
-      configPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
-    } else if (process.platform === "darwin") {
-      configPath = path.join(os.homedir(), "Library", "Application Support", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
-    } else {
-      configPath = path.join(os.homedir(), ".config", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
-    }
-  } else if (choice === "7") {
-    console.log("\nTo manually install Web MCP in your client, add the following configuration to your MCP settings file:\n");
-    const manualConfig = {
-      "mcpServers": {
-        "web-mcp": {
-          "command": "npx",
-          "args": ["-y", "@amitnarw/web-mcp", "mcp"]
-        }
-      }
-    };
-    console.log(JSON.stringify(manualConfig, null, 2) + "\n");
-    rl.close();
-    return;
-  } else {
-    console.log("Setup cancelled.");
-    rl.close();
-    return;
+  }
+}`);
+    return lines;
+  } else if (!configPath) {
+    return [];
   }
 
-  console.log(`\nConfiguring ${configPath}...`);
-  await new Promise((r) => setTimeout(r, 1000));
-  
   const configDir = path.dirname(configPath);
   if (!fs.existsSync(configDir)) {
     fs.mkdirSync(configDir, { recursive: true });
@@ -102,35 +235,32 @@ export async function run(): Promise<void> {
   if (fs.existsSync(configPath)) {
     try {
       config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    } catch {
-      // Ignore
-    }
+    } catch {}
   }
 
-  if (!config.mcpServers) config.mcpServers = {};
-  
-  if (choice === "1") {
+  if (choiceValue === "opencode") {
     if (!config.mcp) config.mcp = {};
     config.mcp["web-mcp"] = {
       type: "local",
-      command: ["npx", "-y", "@amitnarw/web-mcp", "mcp"],
+      command: ["npx", "-y", "@amitnarw/web-mcp@latest", "mcp"],
       enabled: true,
     };
   } else {
+    if (!config.mcpServers) config.mcpServers = {};
     config.mcpServers["web-mcp"] = {
       command: "npx",
-      args: ["-y", "@amitnarw/web-mcp", "mcp"],
+      args: ["-y", "@amitnarw/web-mcp@latest", "mcp"],
     };
   }
 
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   
-  console.log(`✓ Added web-mcp to ${configPath}\n`);
+  lines.push(`\x1b[32m✓ Successfully added web-mcp to:\x1b[0m`);
+  lines.push(`  ${configPath}`);
+  lines.push("");
+  lines.push("Next steps:");
+  lines.push("  1. Restart your AI client");
+  lines.push("  2. Ask the AI: \"Go to google.com and search for OpenCode\"");
   
-  console.log("Setup complete!\n");
-  console.log("Next steps:");
-  console.log("  1. Restart your AI client");
-  console.log("  2. Ask the AI: \"Go to google.com and search for Opencode\"");
-  
-  rl.close();
+  return lines;
 }

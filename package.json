@@ -1,7 +1,7 @@
 {
   "name": "@amitnarw/web-mcp",
-  "version": "0.1.0",
-  "description": "AI browser automation sidebar with real-time activity feed",
+  "version": "0.1.1",
+  "description": "Premium browser automation MCP server with dynamic visual overlay",
   "type": "module",
   "main": "dist/mcp/wrapper.min.js",
   "bin": {
@@ -17,6 +17,7 @@
     "build": "tsc",
     "bundle": "node scripts/bundle.mjs",
     "prepublishOnly": "npm run build && npm run bundle",
+    "postinstall": "node bin/postinstall.js",
     "setup": "node bin/web-mcp.js setup",
     "stop": "node bin/web-mcp.js stop",
     "status": "node bin/web-mcp.js status"
@@ -24,6 +25,7 @@
   "dependencies": {
     "@fontsource/geist-sans": "^5.2.5",
     "@fontsource/inter": "^5.2.8",
+    "@inquirer/prompts": "^8.5.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sse": "^0.16.1",
     "chrome-devtools-mcp": "^1.0.0",

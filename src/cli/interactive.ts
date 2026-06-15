@@ -1,56 +1,261 @@
 import { Orb } from "./orb.js";
 
-const options = [
+type ViewState = "MAIN" | "SETUP_MENU" | "UNINSTALL_MENU" | "INFO_VIEW";
+
+const MAIN_OPTIONS = [
   { value: "setup", label: "Configure AI Client (Setup)" },
+  { value: "test", label: "Test Setup & Configurations" },
+  { value: "uninstall", label: "Uninstall Web MCP" },
   { value: "status", label: "Check Server & Chrome Status" },
   { value: "stop", label: "Stop Server & Chrome" },
   { value: "exit", label: "Exit" }
 ];
 
 export async function run() {
-  console.clear();
   const orb = new Orb();
   
-  let selectedIndex = 0;
+  let currentState: ViewState = "MAIN";
+  let mainIndex = 0;
+  let setupIndex = 0;
+  let uninstallIndex = 0;
+  
+  let infoLines: string[] = [];
+  let isProcessing = false;
+  let configuredClients: string[] = [];
+  
   let time = 0;
-  let linesRendered = 0;
+  let debugMsg = "Waiting for input...";
+  
+  process.stdout.write("\x1b[?1049h\x1b[?25l\x1b[?1002h\x1b[?1015h\x1b[?1006h");
   
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
 
   return new Promise<void>((resolve) => {
-    const onData = async (key: string) => {
-      // Ctrl+C or Esc
-      if (key === "\u0003" || key === "\u001b") {
-        cleanup();
-        process.exit(0);
+    let inputBuffer = "";
+    let escTimeout: NodeJS.Timeout | null = null;
+
+    const processBuffer = async () => {
+      while (inputBuffer.length > 0) {
+        let key = "";
+        let isMouse = false;
+        let isUp = false;
+        let isDownKey = false;
+        let isEnter = false;
+        let isEsc = false;
+        let isCtrlC = false;
+        
+        let button = -1;
+        let y = -1;
+        let isDown = false;
+
+        const sgrMatch = inputBuffer.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
+        const x11Match = inputBuffer.match(/^\x1b\[M(.)(.)(.)/);
+        const ansiMatch = inputBuffer.match(/^\x1b\[[0-9;]*[a-zA-Z]/);
+
+        if (sgrMatch) {
+          key = sgrMatch[0];
+          isMouse = true;
+          button = parseInt(sgrMatch[1]);
+          y = parseInt(sgrMatch[3]);
+          isDown = sgrMatch[4] === 'M';
+          debugMsg = `SGR Mouse: btn=${button} y=${y} isDown=${isDown}`;
+        } else if (x11Match) {
+          key = x11Match[0];
+          isMouse = true;
+          const bChar = x11Match[1].charCodeAt(0) - 32;
+          y = x11Match[3].charCodeAt(0) - 32;
+          isDown = (bChar & 3) !== 3;
+          if (bChar === 64 || bChar === 96) button = 64;
+          else if (bChar === 65 || bChar === 97) button = 65;
+          else button = bChar & 3;
+          debugMsg = `X11 Mouse: btn=${button} y=${y} isDown=${isDown}`;
+        } else if (ansiMatch) {
+          key = ansiMatch[0];
+          if (key === "\x1b[A") isUp = true;
+          if (key === "\x1b[B") isDownKey = true;
+          debugMsg = `ANSI Key: ${key.replace(/\x1b/g, 'ESC')}`;
+        } else if (inputBuffer.startsWith("\x1b")) {
+          if (inputBuffer === "\x1b") {
+            key = "\x1b";
+            isEsc = true;
+            debugMsg = `ESC Pressed`;
+          } else if (inputBuffer.length < 16 && !inputBuffer.includes("M") && !inputBuffer.includes("m") && !inputBuffer.match(/[a-zA-Z]/)) {
+            return; 
+          } else {
+            key = inputBuffer[0]; 
+            debugMsg = `Unknown ESC sequence start`;
+          }
+        } else {
+          key = inputBuffer[0];
+          if (key === "\r" || key === "\n") isEnter = true;
+          if (key === "\u0003") isCtrlC = true;
+          debugMsg = `Raw Char: charCode=${key.charCodeAt(0)}`;
+        }
+
+        inputBuffer = inputBuffer.slice(key.length);
+
+        if (isCtrlC) {
+          cleanup();
+          process.exit(0);
+        }
+
+        if (isProcessing) continue;
+
+        if (isMouse && button !== -1) {
+          if (button === 64) isUp = true;
+          else if (button === 65) isDownKey = true;
+          else if (isDown) {
+            // It's a click. Let's process it.
+            const menuStartY = 12;
+            const optionIndex = y - menuStartY;
+            
+            if (currentState === "MAIN") {
+              if (optionIndex >= 0 && optionIndex < MAIN_OPTIONS.length) {
+                mainIndex = optionIndex;
+                isEnter = true;
+                debugMsg += ` -> Selected MAIN[${optionIndex}]`;
+              } else {
+                debugMsg += ` -> Missed MAIN (idx=${optionIndex})`;
+              }
+            } else if (currentState === "SETUP_MENU") {
+              const { SETUP_OPTIONS } = await import("./setup.js");
+              if (optionIndex >= 0 && optionIndex < SETUP_OPTIONS.length) {
+                setupIndex = optionIndex;
+                isEnter = true;
+                debugMsg += ` -> Selected SETUP[${optionIndex}]`;
+              } else {
+                debugMsg += ` -> Missed SETUP (idx=${optionIndex})`;
+              }
+            } else if (currentState === "UNINSTALL_MENU") {
+              const { UNINSTALL_OPTIONS } = await import("./setup.js");
+              if (optionIndex >= 0 && optionIndex < UNINSTALL_OPTIONS.length) {
+                uninstallIndex = optionIndex;
+                isEnter = true;
+              }
+            }
+          }
+        }
+
+        if (currentState === "MAIN") {
+          if (isUp) mainIndex = Math.max(0, mainIndex - 1);
+          else if (isDownKey) mainIndex = Math.min(MAIN_OPTIONS.length - 1, mainIndex + 1);
+          else if (isEnter) {
+            const sel = MAIN_OPTIONS[mainIndex].value;
+            if (sel === "exit") {
+              cleanup();
+              process.exit(0);
+            } else if (sel === "setup") {
+              isProcessing = true;
+              const { getConfiguredClients } = await import("./setup.js");
+              configuredClients = getConfiguredClients();
+              currentState = "SETUP_MENU";
+              setupIndex = 0;
+              isProcessing = false;
+            } else if (sel === "uninstall") {
+              isProcessing = true;
+              currentState = "UNINSTALL_MENU";
+              uninstallIndex = 0;
+              isProcessing = false;
+            } else if (sel === "test") {
+              isProcessing = true;
+              infoLines = ["\x1b[36mTesting configurations...\x1b[0m"];
+              currentState = "INFO_VIEW";
+              const { testConfigurations } = await import("./setup.js");
+              infoLines = await testConfigurations();
+              isProcessing = false;
+            } else if (sel === "status") {
+              isProcessing = true;
+              infoLines = ["\x1b[36mChecking status...\x1b[0m"];
+              currentState = "INFO_VIEW";
+              const { getStatus } = await import("./status.js");
+              infoLines = await getStatus();
+              isProcessing = false;
+            } else if (sel === "stop") {
+              isProcessing = true;
+              infoLines = ["\x1b[36mStopping processes...\x1b[0m"];
+              currentState = "INFO_VIEW";
+              const { stopProcesses } = await import("./stop.js");
+              infoLines = await stopProcesses();
+              isProcessing = false;
+            }
+          }
+        } 
+        else if (currentState === "SETUP_MENU") {
+          if (isEsc) {
+            currentState = "MAIN";
+            continue;
+          }
+          
+          const { SETUP_OPTIONS } = await import("./setup.js");
+          if (isUp) setupIndex = Math.max(0, setupIndex - 1);
+          else if (isDownKey) setupIndex = Math.min(SETUP_OPTIONS.length - 1, setupIndex + 1);
+          else if (isEnter) {
+            const sel = SETUP_OPTIONS[setupIndex].value;
+            if (sel === "cancel") {
+              currentState = "MAIN";
+            } else {
+              isProcessing = true;
+              infoLines = ["\x1b[36mConfiguring...\x1b[0m"];
+              currentState = "INFO_VIEW";
+              const { configureClient } = await import("./setup.js");
+              infoLines = await configureClient(sel);
+              isProcessing = false;
+            }
+          }
+        }
+        else if (currentState === "UNINSTALL_MENU") {
+          if (isEsc) {
+            currentState = "MAIN";
+            continue;
+          }
+          
+          const { UNINSTALL_OPTIONS } = await import("./setup.js");
+          if (isUp) uninstallIndex = Math.max(0, uninstallIndex - 1);
+          else if (isDownKey) uninstallIndex = Math.min(UNINSTALL_OPTIONS.length - 1, uninstallIndex + 1);
+          else if (isEnter) {
+            const sel = UNINSTALL_OPTIONS[uninstallIndex].value;
+            if (sel === "cancel") {
+              currentState = "MAIN";
+            } else {
+              isProcessing = true;
+              infoLines = ["\x1b[36mUninstalling...\x1b[0m"];
+              currentState = "INFO_VIEW";
+              const { uninstallClient } = await import("./setup.js");
+              infoLines = await uninstallClient(sel);
+              isProcessing = false;
+            }
+          }
+        }
+        else if (currentState === "INFO_VIEW") {
+          if (isEnter || isEsc || (isMouse && button !== -1 && isDown)) {
+            currentState = "MAIN";
+          }
+        }
       }
-      // Up arrow
-      if (key === "\u001b[A") {
-        selectedIndex = Math.max(0, selectedIndex - 1);
+    };
+
+    const onData = (chunk: string) => {
+      inputBuffer += chunk;
+      
+      if (escTimeout) {
+        clearTimeout(escTimeout);
+        escTimeout = null;
       }
-      // Down arrow
-      if (key === "\u001b[B") {
-        selectedIndex = Math.min(options.length - 1, selectedIndex + 1);
-      }
-      // Enter
-      if (key === "\r" || key === "\n") {
-        cleanup();
-        await handleSelection(options[selectedIndex].value);
-        resolve();
+      
+      processBuffer();
+      
+      if (inputBuffer === "\x1b") {
+        escTimeout = setTimeout(() => {
+          processBuffer();
+        }, 50);
       }
     };
     
     process.stdin.on("data", onData);
 
-    const renderLoop = setInterval(() => {
-      if (linesRendered > 0) {
-        process.stdout.write(`\x1b[${linesRendered}A\x1b[1G`);
-      }
-      
-      process.stdout.write("\x1b[?25l");
-      
+    const renderLoop = setInterval(async () => {
       let out = "";
       
       out += `\x1b[1mWeb MCP\x1b[0m\x1b[K\n`;
@@ -63,46 +268,82 @@ export async function run() {
       }
       
       out += `\x1b[K\n`;
-      out += `\x1b[1mWhat would you like to do?\x1b[0m\x1b[K\n`;
-      out += `\x1b[90mUse arrow keys to navigate. Press Enter to select.\x1b[0m\x1b[K\n`;
       
-      for (let i = 0; i < options.length; i++) {
-        const isSelected = i === selectedIndex;
-        if (isSelected) {
-          out += `> \x1b[36m${i + 1}. ${options[i].label} ✓\x1b[0m\x1b[K\n`;
-        } else {
-          out += `  ${i + 1}. ${options[i].label}\x1b[K\n`;
+      if (currentState === "MAIN") {
+        out += `\x1b[1mWhat would you like to do?\x1b[0m\x1b[K\n`;
+        out += `\x1b[90mUse arrow keys or mouse. Press Enter to select.\x1b[0m\x1b[K\n`;
+        
+        for (let i = 0; i < MAIN_OPTIONS.length; i++) {
+          if (i === mainIndex) {
+            out += `> \x1b[36m${MAIN_OPTIONS[i].label}\x1b[0m\x1b[K\n`;
+          } else {
+            out += `  ${MAIN_OPTIONS[i].label}\x1b[K\n`;
+          }
+        }
+      } 
+      else if (currentState === "SETUP_MENU") {
+        out += `\x1b[1mWhich AI client would you like to configure?\x1b[0m\x1b[K\n`;
+        out += `\x1b[90mPress Esc to cancel.\x1b[0m\x1b[K\n`;
+        
+        const { SETUP_OPTIONS } = await import("./setup.js");
+        for (let i = 0; i < SETUP_OPTIONS.length; i++) {
+          const opt = SETUP_OPTIONS[i];
+          const isConfigured = configuredClients.includes(opt.value);
+          const tick = isConfigured ? " \x1b[32m[✓]\x1b[0m" : "";
+          
+          if (i === setupIndex) {
+            out += `> \x1b[36m${opt.label}\x1b[0m${tick}\x1b[K\n`;
+          } else {
+            out += `  ${opt.label}${tick}\x1b[K\n`;
+          }
+        }
+      }
+      else if (currentState === "UNINSTALL_MENU") {
+        out += `\x1b[1mWhich AI client should we uninstall from?\x1b[0m\x1b[K\n`;
+        out += `\x1b[90mPress Esc to cancel.\x1b[0m\x1b[K\n`;
+        
+        const { UNINSTALL_OPTIONS } = await import("./setup.js");
+        for (let i = 0; i < UNINSTALL_OPTIONS.length; i++) {
+          const opt = UNINSTALL_OPTIONS[i];
+          if (i === uninstallIndex) {
+            out += `> \x1b[36m${opt.label}\x1b[0m\x1b[K\n`;
+          } else {
+            out += `  ${opt.label}\x1b[K\n`;
+          }
+        }
+      }
+      else if (currentState === "INFO_VIEW") {
+        for (const line of infoLines) {
+          out += `${line}\x1b[K\n`;
+        }
+        out += `\x1b[K\n`;
+        if (!isProcessing) {
+          out += `\x1b[90m[ Press Enter or click to return to main menu ]\x1b[0m\x1b[K\n`;
         }
       }
       
-      process.stdout.write(out);
-      linesRendered = out.split("\n").length - 1;
+      let uiLines = out.split("\n");
+      if (uiLines[uiLines.length - 1] === "") {
+        uiLines.pop(); 
+      }
+      
+      const maxRows = Math.max(1, (process.stdout.rows || 24) - 1);
+      if (uiLines.length > maxRows) {
+        uiLines = uiLines.slice(0, maxRows); 
+      }
+      
+      process.stdout.write(`\x1b[H${uiLines.join("\n")}\x1b[J`);
       
       time += 0.1;
     }, 50);
 
     function cleanup() {
       clearInterval(renderLoop);
+      if (escTimeout) clearTimeout(escTimeout);
       process.stdin.off("data", onData);
       process.stdin.setRawMode(false);
       process.stdin.pause();
-      process.stdout.write("\x1b[?25h\n");
-      console.clear();
+      process.stdout.write("\x1b[?1049l\x1b[?1002l\x1b[?1015l\x1b[?1006l\x1b[?25h\n");
     }
   });
-}
-
-async function handleSelection(value: string) {
-  if (value === "setup") {
-    const setup = await import("./setup.js");
-    await setup.run();
-  } else if (value === "status") {
-    const status = await import("./status.js");
-    await status.run();
-  } else if (value === "stop") {
-    const stop = await import("./stop.js");
-    await stop.run();
-  } else if (value === "exit") {
-    process.exit(0);
-  }
 }

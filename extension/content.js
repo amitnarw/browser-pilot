@@ -392,7 +392,7 @@
     var stopBtn = document.createElement('button');
     stopBtn.className = 'bp-dialog-btn bp-dialog-btn-stop';
     stopBtn.innerText = 'Halt Action';
-    stopBtn.addEventListener('click', function() { dOverlay.remove(); stopWeb MCP(); });
+    stopBtn.addEventListener('click', function() { dOverlay.remove(); stopWebMCP(); });
     
     actions.appendChild(cancelBtn);
     actions.appendChild(stopBtn);
@@ -405,7 +405,7 @@
     document.body.appendChild(dOverlay);
   }
 
-  function stopWeb MCP(){console.log("[Web MCP] Stop confirmed");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"STOP_BROWSER"});}catch(e){}}
+  function stopWebMCP(){console.log("[Web MCP] Stop confirmed");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"STOP_BROWSER"});}catch(e){}}
 
   function showBadge(){}
   function removeBadge(){}
