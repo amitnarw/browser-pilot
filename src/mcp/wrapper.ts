@@ -147,6 +147,13 @@ function loadConfig(): Config {
       const raw = fs.readFileSync(CONFIG_FILE, "utf8");
       const userConfig = JSON.parse(raw);
       const merged = deepMerge(defaults as unknown as Record<string, unknown>, userConfig) as unknown as Config;
+      
+      // Critical Fix: Always use the dynamic paths for the current package location.
+      // If we don't do this, updating the package might continue using old files
+      // because absolute paths were saved in the user's config.json on the first run.
+      merged.server.script = defaults.server.script;
+      merged.extension.dir = defaults.extension.dir;
+
       log("Config loaded from " + CONFIG_FILE);
       return merged;
     } catch (err) {
@@ -157,7 +164,15 @@ function loadConfig(): Config {
 
   try {
     fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaults, null, 2));
+    
+    // Create a clean config for saving, excluding absolute paths that shouldn't be hardcoded
+    const configToSave = {
+      server: { port: defaults.server.port, startupTimeout: defaults.server.startupTimeout },
+      chrome: { port: defaults.chrome.port, executable: defaults.chrome.executable, startupTimeout: defaults.chrome.startupTimeout },
+      logging: defaults.logging
+    };
+    
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(configToSave, null, 2));
     log("Created default config at " + CONFIG_FILE);
   } catch (err) {
     log("WARNING: Could not create config file: " + (err as Error).message, LogLevel.WARN);
@@ -355,6 +370,8 @@ async function launchChrome(): Promise<boolean> {
     } else {
       execSync(`pkill -f "chrome.*\\.web-mcp/chrome-profile"`, { stdio: "ignore" });
     }
+    // Give the OS time to fully terminate processes and release file locks
+    await sleep(500);
   } catch {
     // Ignore errors (usually means no processes found, which is fine)
   }
@@ -392,24 +409,23 @@ async function launchChrome(): Promise<boolean> {
   // Create a safe, user-owned copy of the extension directory
   // This prevents EACCES permission denied errors if the package was installed globally via root (sudo npm install -g)
   const userExtensionDir = path.join(CONFIG_DIR, "extension");
+  let finalExtensionDir = userExtensionDir;
   try {
     if (fs.existsSync(userExtensionDir)) fs.rmSync(userExtensionDir, { recursive: true, force: true });
     fs.cpSync(extensionDir, userExtensionDir, { recursive: true });
-  } catch (err) {
-    log("WARNING: Failed to copy extension directory to " + userExtensionDir + ": " + (err as Error).message, LogLevel.WARN);
-  }
-
-  // Inject environment variables into extension before loading
-  try {
+    
+    // Inject environment variables into extension before loading
     fs.writeFileSync(path.join(userExtensionDir, "env.js"), `globalThis.WEB_MCP_PORT = ${config.server.port};\n`);
   } catch (err) {
-    log("WARNING: Failed to write env.js: " + (err as Error).message, LogLevel.WARN);
+    log("WARNING: Failed to copy extension directory to " + userExtensionDir + ": " + (err as Error).message, LogLevel.WARN);
+    log("Falling back to original extension directory: " + extensionDir, LogLevel.WARN);
+    finalExtensionDir = extensionDir;
   }
 
   const args = [
     `--remote-debugging-port=${config.chrome.port}`,
     `--user-data-dir=${profileDir}`,
-    `--load-extension=${userExtensionDir}`,
+    `--load-extension=${finalExtensionDir}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-popup-blocking",
