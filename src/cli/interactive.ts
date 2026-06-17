@@ -8,6 +8,8 @@ const MAIN_OPTIONS = [
   { value: "uninstall", label: "Uninstall Web MCP" },
   { value: "status", label: "Check Server & Chrome Status" },
   { value: "stop", label: "Stop Server & Chrome" },
+  { value: "help", label: "Show Help" },
+  { value: "about", label: "About Web MCP" },
   { value: "exit", label: "Exit" }
 ];
 
@@ -184,6 +186,30 @@ export async function run() {
               const { stopProcesses } = await import("./stop.js");
               infoLines = await stopProcesses();
               isProcessing = false;
+            } else if (sel === "help") {
+              infoLines = [
+                "\x1b[1mWeb MCP - In-Browser Copilot\x1b[0m",
+                "",
+                "Usage (from terminal):",
+                "  web-mcp          Open the interactive dashboard",
+                "  web-mcp mcp      Run MCP server (used automatically by AI clients)",
+                "  web-mcp setup    Configure AI Client (Setup) or Uninstall",
+                "  web-mcp test     Test Setup & Configurations",
+                "  web-mcp status   Check Server & Chrome Status",
+                "  web-mcp stop     Stop Server & Chrome",
+                "  web-mcp help     Show this help menu",
+                "  web-mcp about    About Web MCP"
+              ];
+              currentState = "INFO_VIEW";
+            } else if (sel === "about") {
+              infoLines = [
+                "\x1b[1mWeb MCP - In-Browser Copilot\x1b[0m",
+                "",
+                "Web MCP is an advanced browser automation tool designed for AI assistants.",
+                "It uses a local server and a dedicated Chrome extension to provide a",
+                "collision-free, visually stunning browser automation experience."
+              ];
+              currentState = "INFO_VIEW";
             }
           }
         } 

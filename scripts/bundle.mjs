@@ -1,8 +1,10 @@
 import { build } from "esbuild";
-import { readdirSync, statSync } from "fs";
-import { join, relative } from "path";
+import { readdirSync, statSync, mkdirSync, cpSync, rmSync, existsSync } from "fs";
+import { join, relative, basename } from "path";
 
 const DIST_DIR = "dist";
+const EXT_SRC_DIR = join("src", "extension");
+const EXT_DIST_DIR = "extension";
 
 function getEntryPoints(dir) {
   const entries = [];
@@ -18,9 +20,9 @@ function getEntryPoints(dir) {
   return entries;
 }
 
-async function bundle() {
+async function bundleServer() {
   const entryPoints = getEntryPoints(DIST_DIR);
-  console.log(`Bundling ${entryPoints.length} files...`);
+  console.log(`Bundling ${entryPoints.length} server files...`);
 
   for (const entry of entryPoints) {
     const outFile = entry.replace(/\.js$/, ".min.js");
@@ -47,10 +49,55 @@ async function bundle() {
         "zod",
         "cors",
         "eventsource-parser",
+        "puppeteer",
       ],
     });
   }
+}
 
+async function bundleExtension() {
+  console.log(`Bundling extension files from ${EXT_SRC_DIR} to ${EXT_DIST_DIR}...`);
+  if (!existsSync(EXT_SRC_DIR)) {
+    console.log(`  Skipping: ${EXT_SRC_DIR} not found.`);
+    return;
+  }
+
+  // Clean and recreate extension output dir
+  if (existsSync(EXT_DIST_DIR)) {
+    rmSync(EXT_DIST_DIR, { recursive: true, force: true });
+  }
+  mkdirSync(EXT_DIST_DIR, { recursive: true });
+
+  const items = readdirSync(EXT_SRC_DIR);
+  for (const item of items) {
+    const srcPath = join(EXT_SRC_DIR, item);
+    const distPath = join(EXT_DIST_DIR, item);
+    const stat = statSync(srcPath);
+
+    if (stat.isDirectory()) {
+      console.log(`  Copying directory ${item}/...`);
+      cpSync(srcPath, distPath, { recursive: true });
+    } else if (item.endsWith(".js") && item !== "tailwind.config.js") {
+      console.log(`  Minifying ${item}...`);
+      await build({
+        entryPoints: [srcPath],
+        bundle: false,
+        minify: true,
+        target: "es2022",
+        outfile: distPath,
+        sourcemap: true,
+        legalComments: "none",
+      });
+    } else {
+      console.log(`  Copying ${item}...`);
+      cpSync(srcPath, distPath);
+    }
+  }
+}
+
+async function bundle() {
+  await bundleServer();
+  await bundleExtension();
   console.log("Done.");
 }
 

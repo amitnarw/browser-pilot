@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Web MCP",
+  "version": "1.0.0",
+  "description": "AI browser automation sidebar with real-time activity feed",
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["env.js", "content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["sidepanel.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Web MCP"
+  }
+}

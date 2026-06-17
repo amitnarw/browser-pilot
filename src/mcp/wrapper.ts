@@ -106,6 +106,15 @@ function getDefaultConfig(): Config {
   const serverScriptDev = path.join(packageRoot, "dist", "server", "server.js");
   const serverScript = fs.existsSync(serverScriptMin) ? serverScriptMin : serverScriptDev;
 
+  let extensionDir = path.join(packageRoot, "extension");
+  // During local dev, if the build hasn't run yet, fall back to the source directory
+  if (!fs.existsSync(extensionDir) || !fs.existsSync(path.join(extensionDir, "manifest.json"))) {
+    const srcExtensionDir = path.join(packageRoot, "src", "extension");
+    if (fs.existsSync(path.join(srcExtensionDir, "manifest.json"))) {
+      extensionDir = srcExtensionDir;
+    }
+  }
+
   return {
     server: {
       port: 3026,
@@ -119,7 +128,7 @@ function getDefaultConfig(): Config {
       startupTimeout: 20000,
     },
     extension: {
-      dir: path.join(packageRoot, "extension"),
+      dir: extensionDir,
     },
     logging: {
       level: "info",
@@ -233,7 +242,19 @@ async function waitForHealthy(checkFn: () => Promise<{ healthy: boolean }>, maxW
 
 // ─── Chrome Detection ────────────────────────────────────────────────────
 
-function findChromePath(): string {
+async function findChromePath(): Promise<string> {
+  try {
+    const puppeteer = require("puppeteer");
+    const pptrPath = await puppeteer.executablePath();
+    fs.writeFileSync(path.join(CONFIG_DIR, "puppeteer-debug.log"), "Found path: " + pptrPath);
+    if (fs.existsSync(pptrPath)) {
+      return pptrPath;
+    }
+  } catch (e) {
+    fs.writeFileSync(path.join(CONFIG_DIR, "puppeteer-debug.log"), "Error: " + String(e) + "\n" + (e as Error).stack);
+    // Ignore error and fall back to standard Chrome paths
+  }
+
   const paths = [
     // Windows
     path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
@@ -362,27 +383,35 @@ async function launchChrome(): Promise<boolean> {
   log("Launching Chrome with extension auto-load...");
 
   // Force kill any stale zombie Chrome processes running this profile
-  // If the user closed Chrome, background processes often stick around and prevent auto-relaunch!
   try {
-    log("  -> Cleaning up orphaned Chrome processes...");
+    log("  -> Cleaning up stale Web MCP Chrome processes...");
     if (process.platform === "win32") {
-      execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
+      // Kill web-mcp Chrome ONLY
+      execSync(
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like "*.web-mcp*" } | ` +
+        `Stop-Process -Force -ErrorAction SilentlyContinue`,
+        { shell: "powershell.exe", stdio: "ignore" }
+      );
     } else {
       execSync(`pkill -f "chrome.*\\.web-mcp/chrome-profile"`, { stdio: "ignore" });
     }
     // Give the OS time to fully terminate processes and release file locks
-    await sleep(500);
+    await sleep(1500);
+    log("  -> Chrome processes cleared");
   } catch {
     // Ignore errors (usually means no processes found, which is fine)
   }
 
   let chromeExe: string;
   try {
-    chromeExe = config.chrome.executable === "auto-detect" ? findChromePath() : config.chrome.executable;
+    chromeExe = config.chrome.executable === "auto-detect" ? await findChromePath() : config.chrome.executable;
   } catch (err) {
     log("ERROR: " + (err as Error).message, LogLevel.ERROR);
     return false;
   }
+
+
 
   const extensionDir = config.extension.dir;
   if (!fs.existsSync(extensionDir)) {
@@ -391,28 +420,19 @@ async function launchChrome(): Promise<boolean> {
   }
 
   const profileDir = config.chrome.profileDir;
+
   if (!fs.existsSync(profileDir)) {
     fs.mkdirSync(profileDir, { recursive: true });
   }
 
-  // Clear Chrome's extension cache to force reload of latest extension files
-  const extCacheDir = path.join(profileDir, "Default", "Extensions");
-  const crxCacheDir = path.join(profileDir, "extensions_crx_cache");
-  try {
-    if (fs.existsSync(extCacheDir)) fs.rmSync(extCacheDir, { recursive: true, force: true });
-    if (fs.existsSync(crxCacheDir)) fs.rmSync(crxCacheDir, { recursive: true, force: true });
-    log("  → Cleared extension cache");
-  } catch {
-    // Ignore — Chrome will still work, just might use cached files
-  }
+
 
   // Create a safe, user-owned copy of the extension directory
   // This prevents EACCES permission denied errors if the package was installed globally via root (sudo npm install -g)
   const userExtensionDir = path.join(CONFIG_DIR, "extension");
   let finalExtensionDir = userExtensionDir;
   try {
-    if (fs.existsSync(userExtensionDir)) fs.rmSync(userExtensionDir, { recursive: true, force: true });
-    fs.cpSync(extensionDir, userExtensionDir, { recursive: true });
+    fs.cpSync(extensionDir, userExtensionDir, { recursive: true, force: true });
     
     // Inject environment variables into extension before loading
     fs.writeFileSync(path.join(userExtensionDir, "env.js"), `globalThis.WEB_MCP_PORT = ${config.server.port};\n`);
@@ -422,10 +442,17 @@ async function launchChrome(): Promise<boolean> {
     finalExtensionDir = extensionDir;
   }
 
+  // Fix Windows path escaping bugs in Chrome CLI
+  // (Removed custom replace, letting Node's spawn handle escaping naturally)
+  const safeProfileDir = profileDir;
+  const safeExtensionDir = finalExtensionDir;
+
   const args = [
     `--remote-debugging-port=${config.chrome.port}`,
-    `--user-data-dir=${profileDir}`,
-    `--load-extension=${finalExtensionDir}`,
+    `--user-data-dir=${safeProfileDir}`,
+    `--disable-extensions-except=${safeExtensionDir}`,
+    `--load-extension=${safeExtensionDir}`,
+    "--enable-automation",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-popup-blocking",
@@ -434,17 +461,70 @@ async function launchChrome(): Promise<boolean> {
     "--disable-fre",
   ];
 
+  fs.writeFileSync(path.join(CONFIG_DIR, "chrome-args-debug.log"), args.join("\n"));
+
+  // Capture Chrome's stderr to a log file — lets us see exactly why Chrome rejects the extension
+  const chromeStderrLog = path.join(CONFIG_DIR, "chrome-stderr.log");
+  let stderrFd: number | null = null;
+  try {
+    stderrFd = fs.openSync(chromeStderrLog, "w");
+  } catch { /* ignore */ }
+
   const proc = spawn(chromeExe, args, {
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", stderrFd ?? "ignore"],
   });
 
-  proc.unref();
+  if (stderrFd !== null) {
+    try { fs.closeSync(stderrFd); } catch { /* ignore */ }
+  }
 
-  state.chrome.weStarted = true;
-  state.chrome.pid = proc.pid || null;
+  // Detect single-instance handoff: Chrome immediately exits (pid dead within 500ms)
+  await sleep(500);
+  const procStillAlive = (() => {
+    try { process.kill(proc.pid!, 0); return true; } catch { return false; }
+  })();
+  if (!procStillAlive) {
+    log("  → WARNING: Chrome process (PID " + proc.pid + ") exited immediately!", LogLevel.WARN);
+    log("  → This usually means another Chrome instance was running and stole the launch.", LogLevel.WARN);
+    log("  → Chrome stderr log: " + chromeStderrLog, LogLevel.WARN);
+    // Try once more: the kill above might not have had time to fully close all Chrome windows
+    log("  → Retrying after additional cleanup delay...");
+    try {
+      if (process.platform === "win32") {
+        const profileDirEscaped = config.chrome.profileDir.replace(/\\/g, "\\\\");
+        execSync(
+          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
+          { shell: "powershell.exe", stdio: "ignore" }
+        );
+      }
+    } catch { /* ignore */ }
+    await sleep(2000);
+    // Reopen stderr log for retry
+    let retryStderrFd: number | null = null;
+    try { retryStderrFd = fs.openSync(chromeStderrLog, "w"); } catch { /* ignore */ }
+    const retryProc = spawn(chromeExe, args, {
+      detached: true,
+      stdio: ["ignore", "ignore", retryStderrFd ?? "ignore"],
+    });
+    if (retryStderrFd !== null) { try { fs.closeSync(retryStderrFd); } catch { /* ignore */ } }
+    retryProc.unref();
+    state.chrome.pid = retryProc.pid || null;
+    log("  → Retry Chrome launched (PID: " + retryProc.pid + ")");
+  }
 
-  log("  → Chrome launched (PID: " + proc.pid + ")");
+  // If the first proc died (handoff), state.chrome.pid was already updated in the retry block above.
+  // Otherwise, set it from the original proc.
+  if (procStillAlive) {
+    proc.unref();
+    state.chrome.weStarted = true;
+    state.chrome.pid = proc.pid || null;
+  } else {
+    state.chrome.weStarted = true;
+    // pid was already set in retry block
+  }
+
+  log("  → Chrome launched (PID: " + (state.chrome.pid ?? "unknown") + ")");
   log("  → Extension loaded from: " + extensionDir);
   log("  → Waiting for Chrome to be ready...");
 
@@ -830,7 +910,7 @@ async function cleanup(): Promise<void> {
       const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
       spawn("powershell", [
         "-Command",
-        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*${profileDir}*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
       ], { detached: true, stdio: "ignore" }).unref();
       log("Stopped Chrome");
     } catch {
@@ -924,7 +1004,7 @@ server.tool(
         const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
         spawn("powershell", [
           "-Command",
-          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*${profileDir}*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
+          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
         ], { detached: true, stdio: "ignore" }).unref();
         log("Stopped Chrome");
       } catch {

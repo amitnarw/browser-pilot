@@ -1,7 +1,7 @@
 {
   "name": "@amitnarw/web-mcp",
   "version": "0.1.2",
-  "description": "Premium browser automation MCP server with dynamic visual overlay",
+  "description": "Advanced browser automation MCP server with dynamic visual overlay",
   "type": "module",
   "main": "dist/mcp/wrapper.min.js",
   "bin": {
@@ -29,8 +29,10 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sse": "^0.16.1",
     "chrome-devtools-mcp": "^1.0.0",
+    "chrome-remote-interface": "^0.34.0",
     "express": "^4.21.0",
     "material-symbols": "^0.44.12",
+    "puppeteer": "^25.1.0",
     "ws": "^8.18.0",
     "zod": "^3.23.0"
   },

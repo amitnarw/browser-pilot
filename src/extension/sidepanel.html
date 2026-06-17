@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html class="dark h-full w-full overflow-hidden" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Web MCP</title>
+<link href="fonts/inter.css" rel="stylesheet" />
+<link href="fonts/geist.css" rel="stylesheet" />
+<link href="fonts/outlined.css" rel="stylesheet" />
+<link href="tailwind.css" rel="stylesheet" />
+  <style>
+    @keyframes neon-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    @keyframes mesh-flow { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+    .bp-premium-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+    .bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: mesh-flow 4s ease-in-out infinite; border: none; }
+    .bp-orb-eyes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 3px; z-index: 2; transition: transform 0.1s ease-out; transform: translate(var(--eye-x, 0px), var(--eye-y, 0px)); }
+    .bp-orb-eye { width: 4px; height: 4px; background: #adc6ff; border-radius: 50%; animation: orb-blink 4s infinite; box-shadow: 0 0 4px rgba(173,198,255,0.5); }
+    @keyframes orb-blink { 0%, 96%, 98% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+    .bp-dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 2147483651; display: flex; align-items: center; justify-content: center; pointer-events: auto; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: bp-fade-in-fast 0.2s ease-out; font-family: 'Inter', sans-serif; }
+    @keyframes bp-fade-in-fast { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes bp-scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }
+    @keyframes dune-wind { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    .active-neon-card { background: linear-gradient(-45deg, #007aff, #005bc1, #00a2ff, #005bc1); background-size: 400% 400%; animation: dune-wind 15s ease infinite; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 24px rgba(0, 122, 255, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4); color: white; }
+    .bp-dialog { background: #131315; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); padding: 24px; width: 90%; max-width: 300px; display: flex; flex-direction: column; gap: 12px; transform: scale(0.95); animation: bp-pop-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+    @keyframes bp-pop-in { to { transform: scale(1); } }
+    .bp-dialog-title { font-size: 16px; font-weight: 600; color: #adc6ff; margin: 0; display: flex; align-items: center; gap: 8px; }
+    .bp-dialog-desc { font-size: 14px; color: #c1c6d7; margin: 0; line-height: 1.5; }
+    .bp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .bp-dialog-btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; }
+    .bp-dialog-btn-cancel { background: rgba(255,255,255,0.1); color: #c1c6d7; }
+    .bp-dialog-btn-cancel:hover { background: rgba(255,255,255,0.15); color: #e4e2e4; }
+    .bp-dialog-btn-stop { background: rgba(147,0,10,0.3); color: #ffb4ab; }
+    .bp-dialog-btn-stop:hover { background: rgba(147,0,10,0.4); }
+  </style>
+</head>
+<body class="mesh-bg text-on-surface h-full w-full overflow-hidden flex flex-col font-body-lg m-0 p-0">
+  <header class="flex justify-between items-center px-inner-padding h-16 w-full sticky top-0 z-50 bg-surface/60 dark:bg-surface/60 backdrop-blur-[32px] border-b border-white/10 shadow-none transition-colors shrink-0">
+    <button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-white/5 transition-colors p-2 rounded-full flex items-center justify-center">
+      <div id="spinner" class="hidden w-8 h-8 rounded-full bg-surface-container flex items-center justify-center relative">
+        <div class="bp-premium-wrapper">
+          <div class="bp-premium-orb">
+            <div class="bp-orb-eyes">
+              <div class="bp-orb-eye"></div>
+              <div class="bp-orb-eye"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+    <div class="font-bold tracking-[0.2em] uppercase bg-gradient-to-r from-[#4b8eff] to-[#adc6ff] bg-clip-text text-transparent text-[13px] ml-2">Web MCP</div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto custom-scrollbar pb-24 p-container-padding flex flex-col gap-section-gap">
+    
+    <!-- Active State -->
+    <div id="active-state" class="hidden flex-col gap-section-gap flex-1">
+      <section class="flex flex-col gap-stack-gap mt-4">
+        <h2 class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Active Goal</h2>
+        <div class="active-neon-card rounded-full p-4 flex flex-col gap-4 relative overflow-hidden">
+          <div class="absolute -top-10 -right-10 w-24 h-24 bg-white rounded-full blur-[40px] opacity-20"></div>
+          
+          <div id="lock-banner" class="hidden items-center gap-2 rounded-lg p-2 z-10" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.1);">
+            <span class="material-symbols-outlined text-[16px]" style="color: #adc6ff;" data-icon="lock">lock</span>
+            <span class="font-label-md text-[10px] uppercase" style="color: #adc6ff; font-weight: bold;">AI is controlling the browser</span>
+          </div>
+
+          <div class="flex items-start gap-3 z-10">
+            <div class="flex flex-col gap-1">
+              <span class="font-label-md uppercase tracking-wider text-[10px]" style="color: #adc6ff; font-weight: bold;">Current Task</span>
+              <span id="current-task" class="font-body-md leading-tight text-[14px]" style="color: white; font-weight: 500;">Waiting for instructions...</span>
+            </div>
+          </div>
+          
+          <div class="flex flex-col gap-1 z-10 mt-2">
+            <div class="flex justify-between items-center">
+              <span class="font-mono-code text-[10px] text-white/80 flex items-center gap-1"><span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Processing</span>
+            </div>
+            <div class="h-1 w-full bg-black/20 rounded-full overflow-hidden relative">
+              <div class="absolute top-0 bottom-0 left-0 w-1/2 bg-white/40" style="animation: bp-scan 2s ease-in-out infinite;"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <section class="flex flex-col gap-stack-gap flex-1">
+        <div class="flex items-center justify-between">
+          <h2 class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Action Log</h2>
+          <button id="halt-btn" class="text-primary hover:text-secondary transition-colors font-label-md text-[10px] flex items-center gap-1">
+            <span class="material-symbols-outlined text-[16px]" data-icon="pause">pause</span> Halt
+          </button>
+        </div>
+        <div id="actions" class="flex flex-col relative before:absolute before:inset-y-2 before:left-[11.5px] before:w-px before:bg-white/10 ml-1">
+        </div>
+        <div class="h-16 w-full shrink-0"></div> <!-- Spacer for scrolling -->
+      </section>
+    </div>
+
+    <!-- Idle State -->
+    <div id="idle-state" class="flex flex-col items-center justify-center h-full text-center flex-1 py-10">
+      <div class="w-16 h-16 rounded-full bg-surface-container-highest border border-outline/30 flex items-center justify-center mb-4">
+        <span class="material-symbols-outlined text-outline text-3xl" data-icon="hourglass_empty">hourglass_empty</span>
+      </div>
+      <h2 class="font-headline-md text-[16px] text-on-surface mb-1">Ready & Waiting</h2>
+      <p class="font-body-sm text-[12px] text-on-surface-variant max-w-[240px]">Real-time activity will appear here.</p>
+    </div>
+
+    <!-- Debug Section -->
+    <div class="mt-auto pt-6 border-t border-white/5 flex flex-col gap-4">
+      <div id="debug-toggle" class="text-center font-label-md text-[11px] text-primary cursor-pointer hover:text-primary-container uppercase tracking-wider">Show Debug Logs</div>
+      <div id="debug-section" class="hidden flex-col gap-2">
+        <div class="flex justify-between items-center">
+          <span class="font-label-md text-[11px] text-on-surface-variant uppercase">Debug Logs</span>
+          <span id="debug-clear" class="font-label-md text-[11px] text-primary cursor-pointer hover:text-primary-container">Clear</span>
+        </div>
+        <div id="debug-logs" class="max-h-[200px] overflow-y-auto custom-scrollbar font-mono-code text-[11px] leading-relaxed text-on-surface-variant bg-surface-container-lowest p-3 rounded-lg border border-white/5"></div>
+      </div>
+    </div>
+  </main>
+
+
+
+  <script src="env.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -6,7 +6,7 @@ Web MCP is a foreground AI browser automation tool designed to act as an **In-Br
 
 - **Zero-Friction Setup**: Delivered as a single NPM package that bundles the Node.js MCP server and a dedicated Chrome Extension.
 - **Auto-Injection**: The MCP server automatically launches a dedicated Chrome profile and dynamically injects the Chrome Extension—no manual "Load Unpacked" required by the end user!
-- **Premium UI**: Features a native Chrome Side Panel with a real-time action feed, and a gorgeous Hover.dev-inspired ambient light overlay that activates when the AI takes control.
+- **Visual Feedback**: Features a native Chrome Side Panel with a real-time action feed and an ambient light overlay that activates when the AI takes control.
 - **Human-AI Collision Protection**: Web browsers aren't built for two mice. Web MCP uses an advanced CSS DOM-overlay shield to physically block your hardware mouse clicks from disrupting the AI's synthetic DevTools clicks while it's actively working, gracefully dropping the shield exactly when you need to take control back.
 
 ## Prerequisites
@@ -67,8 +67,9 @@ npm run bundle      # Minify with esbuild
 - `src/cli/` — User-facing CLI (`setup`, `status`, `stop`).
 - `src/mcp/wrapper.ts` — The MCP server exposing browser tools to the AI.
 - `src/server/server.ts` — A persistent HTTP/SSE server that acts as the bridge between the stateless MCP protocol and the stateful Chrome Extension.
-- `extension/` — The Chrome extension (content script, service worker, native side panel) that provides the UI and blocks human interference.
-- `dist/` — Compiled and minified output distributed via NPM.
+- `src/extension/` — **(Source)** The Chrome extension source code (content script, service worker, native side panel). Edit files here!
+- `extension/` — **(Build Output)** The compiled and minified Chrome extension files distributed via NPM.
+- `dist/` — **(Build Output)** Compiled and minified Node.js server files distributed via NPM.
 
 ## License
 MIT

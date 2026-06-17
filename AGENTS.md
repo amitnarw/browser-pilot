@@ -161,20 +161,21 @@ D:\amit\web-mcp\
 ├── src/
 │   ├── mcp/wrapper.ts          # MCP server, 21 browser tools
 │   ├── server/server.ts        # HTTP server, session/sidebar state
-│   └── server/logger.ts        # Persistent file logger with rotation
-├── extension/
-│   ├── manifest.json             # Chrome extension manifest
-│   ├── service_worker.js        # SSE client, broadcasts LOCK_STATE
-│   ├── content.js               # Blocking overlay + status bar
-│   ├── popup.html               # Extension popup UI
-│   ├── popup.js                 # Popup logic
-│   ├── sidepanel.html           # Native side panel (real-time via SSE)
-│   └── sidepanel.js             # Side panel SSE client + DOM updates
-├── dist/                        # Compiled + minified output
+│   ├── server/logger.ts        # Persistent file logger with rotation
+│   └── extension/              # SOURCE FILES: Edit extension code here!
+│       ├── manifest.json       # Chrome extension manifest
+│       ├── service_worker.js   # SSE client, broadcasts LOCK_STATE
+│       ├── content.js          # Blocking overlay + status bar
+│       ├── popup.html          # Extension popup UI
+│       ├── popup.js            # Popup logic
+│       ├── sidepanel.html      # Native side panel (real-time via SSE)
+│       └── sidepanel.js        # Side panel SSE client + DOM updates
+├── extension/                  # BUILD OUTPUT: Minified extension files (Do not edit)
+├── dist/                       # BUILD OUTPUT: Compiled server files (Do not edit)
 │   ├── mcp/wrapper.min.js
 │   ├── server/server.min.js
 │   └── server/logger.min.js
-└── AGENTS.md                    # This file
+└── AGENTS.md                   # This file
 ```
 
 ## Common Commands
