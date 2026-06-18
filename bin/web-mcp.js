@@ -13,7 +13,27 @@
         break;
       case "setup": {
         const interactive = await import("../dist/cli/interactive.min.js");
-        await interactive.run();
+        await interactive.run("SETUP_MENU");
+        break;
+      }
+      case "test": {
+        console.log("Testing configurations...");
+        const { testConfigurations } = await import("../dist/cli/setup.min.js");
+        const lines = await testConfigurations();
+        console.log(lines.join("\n"));
+        break;
+      }
+      case "browser":
+      case "launch": {
+        const { launchBrowser } = await import("../dist/cli/browser.min.js");
+        const lines = await launchBrowser();
+        console.log(lines.join("\n"));
+        break;
+      }
+      case "troubleshoot": {
+        const { runTroubleshooter } = await import("../dist/cli/troubleshoot.min.js");
+        const lines = await runTroubleshooter();
+        console.log(lines.join("\n"));
         break;
       }
       case "stop": {
@@ -47,6 +67,8 @@
         console.log("  web-mcp          Open the interactive dashboard");
         console.log("  web-mcp mcp      Run MCP server (used automatically by AI clients)");
         console.log("  web-mcp setup    Configure AI Client (Setup) or Uninstall");
+        console.log("  web-mcp browser  Launch the isolated Chrome browser manually");
+        console.log("  web-mcp troubleshoot  Troubleshoot and fix environment issues");
         console.log("  web-mcp test     Test Setup & Configurations");
         console.log("  web-mcp status   Check Server & Chrome Status");
         console.log("  web-mcp stop     Stop Server & Chrome");

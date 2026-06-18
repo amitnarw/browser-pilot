@@ -39,9 +39,13 @@ After running setup, using Web MCP is entirely seamless:
 ### CLI Commands
 
 ```bash
-web-mcp setup    # One-time setup to wire MCP to your client
-web-mcp status   # Check if the backend server and Chrome are healthy
-web-mcp stop     # Force quit the background server and browser profile
+web-mcp             # Interactive dashboard
+web-mcp setup       # Setup/Uninstall UI
+web-mcp troubleshoot # Fix environment, cache, or stuck process issues
+web-mcp mcp         # Run the raw MCP server (for AI clients)
+web-mcp browser     # Manually test the browser
+web-mcp status      # View server health
+web-mcp stop        # Force quit the background server and browser profile
 ```
 
 ## For Developers & AI Agents

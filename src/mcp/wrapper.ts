@@ -124,7 +124,7 @@ function getDefaultConfig(): Config {
     chrome: {
       port: 9222,
       executable: "auto-detect",
-      profileDir: path.join(CONFIG_DIR, "chrome-profile"),
+      profileDir: path.join(CONFIG_DIR, "chrome-profile-v2"),
       startupTimeout: 20000,
     },
     extension: {
@@ -243,18 +243,6 @@ async function waitForHealthy(checkFn: () => Promise<{ healthy: boolean }>, maxW
 // ─── Chrome Detection ────────────────────────────────────────────────────
 
 async function findChromePath(): Promise<string> {
-  try {
-    const puppeteer = require("puppeteer");
-    const pptrPath = await puppeteer.executablePath();
-    fs.writeFileSync(path.join(CONFIG_DIR, "puppeteer-debug.log"), "Found path: " + pptrPath);
-    if (fs.existsSync(pptrPath)) {
-      return pptrPath;
-    }
-  } catch (e) {
-    fs.writeFileSync(path.join(CONFIG_DIR, "puppeteer-debug.log"), "Error: " + String(e) + "\n" + (e as Error).stack);
-    // Ignore error and fall back to standard Chrome paths
-  }
-
   const paths = [
     // Windows
     path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
@@ -272,6 +260,17 @@ async function findChromePath(): Promise<string> {
 
   for (const p of paths) {
     if (fs.existsSync(p)) return p;
+  }
+
+  // Fallback to puppeteer (slow)
+  try {
+    const puppeteer = require("puppeteer");
+    const pptrPath = await puppeteer.executablePath();
+    if (fs.existsSync(pptrPath)) {
+      return pptrPath;
+    }
+  } catch (e) {
+    // Ignore error
   }
 
   throw new Error("Chrome not found. Install Google Chrome or set chrome.executable in config.json");
@@ -470,9 +469,23 @@ async function launchChrome(): Promise<boolean> {
     stderrFd = fs.openSync(chromeStderrLog, "w");
   } catch { /* ignore */ }
 
+  fs.writeFileSync(path.join(CONFIG_DIR, "debug-extension-dir.txt"), "Extension Dir: " + safeExtensionDir + "\nArgs: " + args.join(" "));
+  fs.writeFileSync(path.join(CONFIG_DIR, "debug-env-dump.json"), JSON.stringify(process.env, null, 2));
+
+  // Clean environment variables to prevent OpenCode's Electron variables from breaking Chrome
+  const cleanEnv: Record<string, string> = {};
+  for (const key of Object.keys(process.env)) {
+    if (!key.toUpperCase().startsWith("ELECTRON_") && 
+        !key.toUpperCase().startsWith("OPENCODE_") && 
+        !key.toUpperCase().startsWith("VSCODE_")) {
+      cleanEnv[key] = process.env[key] as string;
+    }
+  }
+
   const proc = spawn(chromeExe, args, {
     detached: true,
     stdio: ["ignore", "ignore", stderrFd ?? "ignore"],
+    env: cleanEnv,
   });
 
   if (stderrFd !== null) {
@@ -774,13 +787,13 @@ async function callChromeDevtoolsTool(
   const ready = await ensureBrowserReady();
   if (!ready.ok) {
     return {
-      content: [{ type: "text" as const, text: "ERROR: " + ready.error }],
+      content: [{ type: "text" as const, text: "ERROR: " + ready.error + "\n\nCRITICAL AI INSTRUCTION: DO NOT attempt to fix this by killing the Chrome process manually (e.g. Stop-Process or taskkill), and DO NOT try to rebuild the extension using npm commands. Simply report this exact error to the user and await instructions." }],
     };
   }
 
   if (!chromeDevtoolsClient) {
     return {
-      content: [{ type: "text" as const, text: "ERROR: chrome-devtools-mcp not connected" }],
+      content: [{ type: "text" as const, text: "ERROR: chrome-devtools-mcp not connected" + "\n\nCRITICAL AI INSTRUCTION: DO NOT attempt to fix this by killing the Chrome process manually (e.g. Stop-Process or taskkill), and DO NOT try to rebuild the extension using npm commands. Simply report this exact error to the user and await instructions." }],
     };
   }
 
@@ -960,7 +973,7 @@ server.tool(
     const ready = await ensureBrowserReady();
     if (!ready.ok) {
       return {
-        content: [{ type: "text" as const, text: "ERROR: " + ready.error }],
+        content: [{ type: "text" as const, text: "ERROR: " + ready.error + "\n\nCRITICAL AI INSTRUCTION: DO NOT attempt to fix this by killing the Chrome process manually (e.g. Stop-Process or taskkill), and DO NOT try to rebuild the extension using npm commands. Simply report this exact error to the user and await instructions." }],
       };
     }
 
@@ -1452,3 +1465,4 @@ main().catch((err: Error) => {
   log("Fatal error: " + err.message, LogLevel.ERROR);
   cleanup().finally(() => process.exit(1));
 });
+

@@ -5,8 +5,8 @@ This file provides critical context for AI agents working on the Web MCP project
 ## 🔴 CRITICAL: AI Behavior Rules (READ IMMEDIATELY)
 
 **1. NEVER Manually Start Chrome**: You MUST NOT run commands like `start chrome` or `chrome.exe` in powershell. The `web-mcp` MCP tools (like `browser_navigate`) will automatically launch Chrome for you if it is not running. 
-**2. NEVER Use `taskkill` on Chrome**: You MUST NOT run commands like `taskkill /f /im chrome.exe`. This kills the user's personal browsing sessions. If you absolutely must clean up stale processes, ONLY use the specific `Get-CimInstance` powershell commands listed below under "Kill All Stale Processes".
-**3. NEVER Try to Fix the Port**: If port 9222 is busy or Chrome fails to connect, do NOT try to kill all chromes or change the port manually. Report the error to the user or use the designated cleanup commands.
+**2. NEVER Use `taskkill` on Chrome**: You MUST NOT run commands like `taskkill /f /im chrome.exe`. This kills the user's personal browsing sessions. If you absolutely must clean up stale processes, ONLY use the `web-mcp troubleshoot` command.
+**3. NEVER Try to Fix the Port**: If port 9222 is busy or Chrome fails to connect, do NOT try to kill all chromes or change the port manually. Report the error to the user or run `web-mcp troubleshoot`.
 **4. NO CHEATING - SIMULATE REAL USERS**: The purpose of this tool is to test website functionality like a real user. You MUST NOT use `browser_navigate` to jump directly to internal pages or cheat by typing direct URLs. Use `browser_navigate` ONLY for the initial entry point, and then rely strictly on `browser_click`, `browser_type`, etc., to navigate the site.
 
 ## 🔴 CRITICAL: Extension Reload Requirement
@@ -42,20 +42,10 @@ Wrapper dies → Server + Chrome may SURVIVE as orphans
 
 **Key rule:** When the wrapper dies (chat ends, crashes), child processes may stay alive. This causes port conflicts on next run.
 
-### Kill All Stale Processes
+### Kill All Stale Processes & Clear Caches
 ```powershell
-# Kill wrapper + server + Chrome processes
-Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" -or $_.CommandLine -like "*chrome-devtools*" } | Stop-Process -Force
-
-# Kill Chrome with web-mcp profile
-Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | Stop-Process -Force
-```
-
-### Clear Extension Cache
-Chrome caches extension files in the profile. Old content.js may persist.
-```powershell
-Remove-Item -Recurse -Force "$env:USERPROFILE\.web-mcp\chrome-profile\Default\Extensions"
-Remove-Item -Recurse -Force "$env:USERPROFILE\.web-mcp\chrome-profile\extensions_crx_cache"
+# Run the built-in troubleshooter to automatically clean everything up:
+web-mcp troubleshoot
 ```
 
 ## Sidebar Not Visible? Checklist
@@ -181,6 +171,12 @@ D:\amit\web-mcp\
 ## Common Commands
 
 ```powershell
+# Run the built-in Troubleshooter to fix environment, process, or caching issues
+web-mcp troubleshoot
+
+# Launch Isolated Chrome Manually (for testing extension UI)
+web-mcp browser
+
 # Rebuild everything
 cd "D:\amit\web-mcp"; npm run build; npm run bundle
 

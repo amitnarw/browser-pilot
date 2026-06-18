@@ -1,8 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Web MCP",
+  "name": "web-mcp extension",
   "version": "1.0.0",
-  "description": "AI browser automation sidebar with real-time activity feed",
+  "description": "An advanced in-browser automation copilot that gives AI assistants direct control over Chrome with real-time visual feedback.",
+  "icons": {
+    "128": "icon128.png"
+  },
   "permissions": [
     "sidePanel",
     "tabs",
@@ -33,6 +36,9 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Web MCP"
+    "default_title": "web-mcp",
+    "default_icon": {
+      "128": "icon128.png"
+    }
   }
 }

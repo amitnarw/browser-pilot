@@ -53,6 +53,16 @@ async function bundleServer() {
       ],
     });
   }
+
+  // Delete the original unminified .js files to save space in the npm package
+  // We do this after all files are bundled so esbuild can resolve cross-file imports during the build
+  for (const entry of entryPoints) {
+    try {
+      rmSync(entry);
+    } catch (e) {
+      // ignore
+    }
+  }
 }
 
 async function bundleExtension() {
@@ -85,7 +95,7 @@ async function bundleExtension() {
         minify: true,
         target: "es2022",
         outfile: distPath,
-        sourcemap: true,
+        sourcemap: false,
         legalComments: "none",
       });
     } else {
@@ -105,3 +115,4 @@ bundle().catch((err) => {
   console.error("Bundle failed:", err);
   process.exit(1);
 });
+

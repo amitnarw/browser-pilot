@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { getConfiguredClients, SETUP_OPTIONS } from "./setup.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
@@ -61,29 +62,14 @@ export async function getStatus(): Promise<string[]> {
   }
 
   // Check config
-  const configFile = path.join(CONFIG_DIR, "config.json");
-  lines.push("Config:  " + (fs.existsSync(configFile) ? configFile : "Not found"));
+  lines.push("Config:  " + (fs.existsSync(CONFIG_FILE) ? CONFIG_FILE : "Not found"));
 
-  // Check OpenCode config
-  const possiblePaths = [
-    path.join(os.homedir(), ".config", "opencode", "opencode.json"),
-    path.join(os.homedir(), ".opencode", "opencode.json"),
-  ];
-  let opencodeConfigured = false;
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      try {
-        const config = JSON.parse(fs.readFileSync(p, "utf8"));
-        if (config.mcp && config.mcp["web-mcp"]) {
-          opencodeConfigured = true;
-          lines.push("OpenCode: Configured ✓");
-          break;
-        }
-      } catch {}
-    }
-  }
-  if (!opencodeConfigured) {
-    lines.push("OpenCode: Not configured (run: Setup)");
+  // Check Configured Clients
+  const configured = getConfiguredClients();
+  if (configured.length > 0) {
+    lines.push("Clients: " + configured.map(c => SETUP_OPTIONS.find(o => o.value === c)?.label || c).join(", "));
+  } else {
+    lines.push("Clients: Not configured (run: web-mcp setup)");
   }
 
   return lines;

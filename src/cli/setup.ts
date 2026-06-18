@@ -116,8 +116,9 @@ export async function testConfigurations(): Promise<string[]> {
         if (!mcpDef) {
           status = "\x1b[33mFile exists, but web-mcp not added\x1b[0m";
         } else {
-          const isCommandValid = (opt.value === "opencode" && Array.isArray(mcpDef.command) && mcpDef.command.includes("npx")) ||
-                                 (mcpDef.command === "npx");
+          const cmd = mcpDef.command;
+          const isCommandValid = (opt.value === "opencode" && Array.isArray(cmd) && (cmd.includes("npx") || cmd.includes("web-mcp"))) ||
+                                 (cmd === "npx" || cmd === "web-mcp");
           if (isCommandValid) {
             status = "\x1b[32mWorking [✓]\x1b[0m";
             anyFound = true;
@@ -191,8 +192,22 @@ export async function uninstallClient(choiceValue: string): Promise<string[]> {
     lines.push("\x1b[33mNo web-mcp configurations found to remove.\x1b[0m");
   } else {
     lines.push("");
-    lines.push("\x1b[32mUninstall complete. Please restart your AI clients.\x1b[0m");
+    lines.push("\x1b[32mClient uninstall complete.\x1b[0m");
   }
+
+  // If uninstalling from ALL clients, also wipe out the local Web MCP app data (profiles, logs, etc)
+  if (choiceValue === "all") {
+    try {
+      if (fs.existsSync(CONFIG_DIR)) {
+        fs.rmSync(CONFIG_DIR, { recursive: true, force: true });
+        lines.push(`\x1b[32m✓ Removed local Web MCP data (~/.web-mcp)\x1b[0m`);
+      }
+    } catch (e) {
+      lines.push(`\x1b[31m✗ Failed to remove local Web MCP data (files might be locked)\x1b[0m`);
+    }
+  }
+
+  lines.push("\x1b[32mPlease restart your AI clients.\x1b[0m");
 
   return lines;
 }
@@ -216,8 +231,8 @@ export async function configureClient(choiceValue: string): Promise<string[]> {
     lines.push(`{
   "mcpServers": {
     "web-mcp": {
-      "command": "npx",
-      "args": ["-y", "@amitnarw/web-mcp", "mcp"]
+      "command": "web-mcp",
+      "args": ["mcp"]
     }
   }
 }`);
@@ -242,14 +257,14 @@ export async function configureClient(choiceValue: string): Promise<string[]> {
     if (!config.mcp) config.mcp = {};
     config.mcp["web-mcp"] = {
       type: "local",
-      command: ["npx", "-y", "@amitnarw/web-mcp@latest", "mcp"],
+      command: ["web-mcp", "mcp"],
       enabled: true,
     };
   } else {
     if (!config.mcpServers) config.mcpServers = {};
     config.mcpServers["web-mcp"] = {
-      command: "npx",
-      args: ["-y", "@amitnarw/web-mcp@latest", "mcp"],
+      command: "web-mcp",
+      args: ["mcp"],
     };
   }
 
