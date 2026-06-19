@@ -71,7 +71,6 @@ export async function launchBrowser(): Promise<string[]> {
   const args = [
     "--remote-debugging-port=9222",
     `--user-data-dir=${profileDir}`,
-    `--disable-extensions-except=${extensionDir}`,
     `--load-extension=${extensionDir}`,
     "--enable-automation",
     "--no-first-run",
@@ -80,6 +79,7 @@ export async function launchBrowser(): Promise<string[]> {
     "--disable-translate",
     "--disable-default-apps",
     "--disable-fre",
+    "https://example.com"
   ];
 
   const proc = spawn(chromeExe, args, {
