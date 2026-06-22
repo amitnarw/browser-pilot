@@ -1,61 +1,74 @@
-# Web MCP — Project Context & Handover Notes (Updated 2026-06-19)
+# Web MCP — Project State & Handover Reference (v0.1.3)
 
-## 1. The Core Problem (Root Cause — RESOLVED)
-
-Chrome requires **Developer Mode ON** in the `Local State` file to allow unpacked extensions to inject content scripts.
-- **Correct file:** `~/.web-mcp/chrome-profile-v2/Local State`
-- **Correct JSON path:** `extensions.ui.developer_mode = true`
-
-**Fix Applied:**
-1. Code fix in `src/cli/browser.ts` and `src/mcp/wrapper.ts` — reads existing `Local State`, injects `developer_mode = true`, and writes atomically before launching Chrome.
+This document provides a clean, comprehensive summary of the current state of **Web MCP** (published as `@amitnarw/web-mcp@0.1.3`). 
 
 ---
 
-## 2. The Second Problem (Root Cause — DISCOVERED!)
+## 1. Version 0.1.3 Overview
 
-### Why was Chrome exiting after 5 seconds during `web-mcp browser`?
-We noticed that Chrome would launch, bind to port 9222 briefly, and then immediately exit. It was doing a **single-instance handoff** and terminating because the `chrome-profile-v2` was already in use!
+Web MCP is fully updated, packaged, and published under the scoped name `@amitnarw/web-mcp@0.1.3`. All core functionality, interactive CLI tools, coordinate servers, and browser extensions are stable.
 
-### Why was the profile in use?
-Because **every single cleanup command in the entire codebase was silently failing!**
+### Key Releases & Fixes:
+1. **Stealth Mode / CAPTCHA Bypass**: Replaced `--enable-automation` with `--disable-blink-features=AutomationControlled` across both the browser manager and the main MCP wrapper to prevent Google and standard web sites from flagging and blocking automated actions.
+2. **Asynchronous Browser Kill**: In `src/cli/browser.ts`, the process cleanups (`wmic` on Windows, `pkill` on macOS/Linux) have been made asynchronous and unreferenced (`spawn(..., { detached: true }).unref()`) to eliminate the interface freeze observed in earlier versions.
+3. **PowerShell Pipeline Process Cleanups**: Fixed the pipeline syntax for killing stale processes across Windows environments. It now correctly maps process IDs and prevents hidden failures:
+   `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { ... } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+4. **OpenAI Codex Integration**: Added support for Codex configuration in `config.toml` along with automatic generation of a custom instructions document at `~/.codex/web-mcp-instructions.md`. This instructions file contains system rules instructing the Codex LLM to always select Web MCP tools over its built-in browser engine.
+5. **Config Path Refactoring**: Standardized configuration directories, paths, and JSON key structures for all major AI clients (OpenCode, Claude Desktop, Claude Code, Cursor, Windsurf, Zed, Cody, Roo Code, Codex, Antigravity).
 
-The codebase uses PowerShell commands like this to kill stale Chrome processes:
-```powershell
-Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+---
+
+## 2. Supported Clients Configuration Matrix
+
+The `web-mcp setup` script automates configuration injection across the following platforms:
+
+| Client | Primary Configuration Path | Key/Block Used | Notes |
+| :--- | :--- | :--- | :--- |
+| **OpenCode** | `~/.opencode.json` | `mcpServers["web-mcp"]` | Falls back to `~/.config/opencode/opencode.json` |
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` | `mcpServers["web-mcp"]` | OS-specific paths mapped automatically |
+| **Claude Code** | `~/.claude/settings.json` | `mcpServers["web-mcp"]` | Falls back to `~/.claude.json` |
+| **Cursor** | `~/.cursor/mcp.json` | `mcpServers["web-mcp"]` | |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `mcpServers["web-mcp"]` | |
+| **Zed Editor** | `~/Library/Application Support/Zed/settings.json` | `context_servers["web-mcp"]` | Roaming AppData mapped for Windows |
+| **Cody** | `~/Library/Application Support/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json` | `mcpServers["web-mcp"]` | Windows paths resolved under Roaming |
+| **Roo Code** | `~/.cline/data/settings/cline_mcp_settings.json` | `mcpServers["web-mcp"]` | Cline / Roo Code settings integration |
+| **OpenAI Codex** | `~/.codex/config.toml` | `[mcp_servers.web-mcp]` | TOML format; generates model instructions |
+| **Antigravity** | `~/.gemini/antigravity/mcp_config.json` | `mcpServers["web-mcp"]` | |
+| **ChatGPT Desktop**| Manual Setup | N/A | Connected via local proxy bridge |
+
+---
+
+## 3. Architecture & Process Lifecycle
+
+```
+AI Client (e.g. OpenCode)
+  └── MCP Wrapper (dist/mcp/wrapper.min.js)
+        ├── Express Server (port 3026) [Long-lived]
+        ├── Chromium Instance (port 9222) [Long-lived, custom MV3 extension]
+        └── chrome-devtools-mcp Client connection
 ```
 
-**The Bug:**
-`Get-CimInstance` returns a WMI object. `Stop-Process` accepts pipeline input by property name. It finds the `Name` property (`"chrome.exe"`) and tries to run `Stop-Process -Name "chrome.exe"`. 
-However, PowerShell's `Stop-Process` requires process names **without the `.exe` extension**. It throws a fatal error: `Cannot find a process with the name "chrome.exe"`. 
-Because of `-ErrorAction SilentlyContinue`, this error was completely hidden!
-
-**The Result:**
-Old, disconnected Chrome processes were NEVER being killed. They lingered in the background permanently holding the `chrome-profile-v2` lock. When `web-mcp browser` or the MCP wrapper tried to launch a fresh Chrome, the new Chrome process detected the locked profile, passed its startup arguments to the zombie Chrome via IPC, and immediately exited.
+* **Heartbeat Monitor**: The extension `service_worker.js` pings the Express server every 3 seconds. If the server is offline or unreachable for more than 60 seconds, the extension automatically closes all browser windows to prevent "zombie" background processes.
+* **Shared Singleton Sessions**: The Express server and Chromium instance are independent of individual wrapper sessions. Multiple client windows can safely query and share browser state without causing process collisions or forced kills.
+* **Security & Interaction Locks**: The extension injects a full-page transparent overlay with `pointer-events: auto` to block manual user interaction while the agent executes commands. Layout recalculation is forced prior to CDP clicks to guarantee clicks land on correct elements instead of being captured by the overlay.
+* **Idle Timeout**: The browser session automatically releases the sidebar lock and overlay if no tool calls are received for 90 seconds.
 
 ---
 
-## 3. The Fix We Need to Apply Everywhere
+## 4. Troubleshooting & Maintenance Commands
 
-We must update all cleanup commands across the codebase.
+A list of standard diagnostic commands is available in the package:
 
-**Incorrect:**
-`... | Stop-Process -Force`
+```powershell
+# Clean stale processes, cached profiles, and extensions
+web-mcp troubleshoot
 
-**Correct:**
-`... | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+# Launch isolated Chromium manually
+web-mcp browser
 
-### Files that need this fix:
-1. `src/cli/stop.ts` (Lines ~40)
-2. `src/cli/troubleshoot.ts` (Lines ~29, 33)
-3. `src/mcp/wrapper.ts` (Lines ~397, 546)
-4. `AGENTS.md` documentation
+# Check status of server, browser, and configurations
+web-mcp status
 
----
-
-## 4. Current State & Next Steps
-- The extension loads perfectly when Chrome is freshly launched.
-- Developer mode injection works perfectly.
-- The root cause for Chrome exiting has been definitively proven to be silent PowerShell pipeline failures leaving zombie Chrome processes.
-
-**Next agent:**
-Please apply the `ForEach-Object { Stop-Process -Id $_.ProcessId -Force }` fix to the files listed in Section 3, then run `npm run build && npm run bundle`, and finally test the full `web-mcp browser` lifecycle to verify everything is 100% stable.
+# Rebuild and bundle source code
+npm run build && npm run bundle
+```

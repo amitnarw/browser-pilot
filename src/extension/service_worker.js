@@ -1,6 +1,6 @@
 importScripts("env.js");
 var port = globalThis.WEB_MCP_PORT || 3026;
-var SERVER_URL = "http://localhost:" + port;
+var SERVER_URL = "http://127.0.0.1:" + port;
 var VERSION = "1.0.0";
 var eventSource = null;
 var lastBroadcastKey = null;
@@ -118,7 +118,7 @@ setInterval(function() {
     .catch(function() {
       consecutivePingFailures++;
       if (consecutivePingFailures >= 20) { // 20 * 3s = 60s
-        log("Server heartbeat failed for 60 seconds. Parent process likely crashed. Self-destructing Chrome to prevent zombie process...");
+        log("Server heartbeat failed for 60 seconds. Parent process likely crashed. Self-destructing Chromium to prevent zombie process...");
         chrome.windows.getAll({}, function(windows) {
           windows.forEach(function(win) {
             chrome.windows.remove(win.id);

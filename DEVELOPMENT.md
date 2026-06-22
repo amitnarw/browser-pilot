@@ -1,12 +1,15 @@
 # Web MCP - Development Guide
 
+## 🔴 CRITICAL NOTE
+**We exclusively use a managed Chromium binary (via Puppeteer).** Modern Google Chrome blocks unpacked extensions, so the project relies entirely on downloading and launching a dedicated Chromium instance.
+
 ## Project Overview
 
 Web MCP is an npm package that gives AI agents (via OpenCode) full browser 
 automation control with a real-time activity sidebar. It uses MCP (Model Context 
 Protocol) to expose browser tools that AI models can call autonomously.
 
-**Key idea:** The AI decides when to open/close Chrome. The extension auto-loads. 
+**Key idea:** The AI decides when to open/close Chromium. The extension auto-loads. 
 The sidebar shows what the AI is doing in real-time. The user can't interfere while 
 the AI is controlling the browser (hard lock).
 
@@ -21,7 +24,7 @@ web-mcp setup
 
 # Use (just run OpenCode)
 opencode
-# AI has full browser control — opens/closes Chrome, navigates, clicks, types
+# AI has full browser control — opens/closes Chromium, navigates, clicks, types
 # Sidebar shows real-time activity
 # User can't interfere while AI is controlling
 ```
@@ -32,7 +35,7 @@ opencode
 OpenCode
   └── MCP Wrapper (dist/mcp/wrapper.min.js)
         ├── Always registered (visible to AI from start):
-        │   ├── browser_start          — Start Chrome + server (optional)
+        │   ├── browser_start          — Start Chromium + server (optional)
         │   ├── browser_stop           — Stop everything
         │   ├── browser_get_status     — Get session state
         │   ├── browser_navigate       — Go to URL
@@ -67,7 +70,7 @@ OpenCode
 AI calls browser_navigate("https://google.com")
   → Tool handler calls ensureBrowserReady()
     → Checks server health → auto-starts if needed
-    → Checks Chrome health → auto-launches if needed
+    → Checks Chromium health → auto-launches if needed
     → Connects to chrome-devtools-mcp if needed
     → Starts sidebar session
   → Tool calls chrome-devtools-mcp navigate_page
@@ -83,7 +86,7 @@ AI calls browser_start (optional — auto-start handles it)
 
 AI calls browser_stop
   → Disconnects chrome-devtools-mcp
-  → Kills Chrome, kills server
+  → Kills Chromium, kills server
   → Resets all state
   → Session: ready → closing → idle
 ```
@@ -100,25 +103,25 @@ AI calls browser_stop
 
 ### CLI Commands
 - `web-mcp setup` — Creates `~/.web-mcp/` dir, config.json, adds MCP entry to OpenCode config
-- `web-mcp stop` — Kills server (by PID file) + Chrome (by profile args)
-- `web-mcp status` — Checks server health, Chrome health, OpenCode config
+- `web-mcp stop` — Kills server (by PID file) + Chromium (by profile args)
+- `web-mcp status` — Checks server health, Chromium health, OpenCode config
 
 ### MCP Wrapper (`src/mcp/wrapper.ts`)
 - **Static tool registration** — All 20 browser tools registered at startup, visible to AI immediately
-- **`ensureBrowserReady()` pattern** — Auto-starts server + Chrome + chrome-devtools-mcp on first tool call
+- **`ensureBrowserReady()` pattern** — Auto-starts server + Chromium + chrome-devtools-mcp on first tool call
 - **`callChromeDevtoolsTool()` helper** — Handles session state, sidebar logging, and chrome-devtools-mcp delegation
 - `browser_start` tool — Explicit start (optional, auto-start handles it)
-- `browser_stop` tool — Stops Chrome + server, resets state
+- `browser_stop` tool — Stops Chromium + server, resets state
 - `browser_get_status` tool — Returns session state
 - 17 high-level browser tools — navigate, click, type, fill, scroll, screenshot, snapshot, press_key, wait, evaluate, new_tab, close_tab, switch_tab, get_tabs, get_url, hover, drag
-- Cleanup on exit (kills server/Chrome if we started them)
+- Cleanup on exit (kills server/Chromium if we started them)
 - `fetchWithTimeout` bug fix — method/headers/body were dropped, making all POSTs into GETs
 - `submitKey` fix — now calls `press_key` separately (chrome-devtools-mcp's type_text submitKey unreliable)
 - `browser_done` tool — signals task completion, hides overlay, releases lock
 - 90-second idle timeout — auto-closes sidebar if AI forgets `browser_done`
 - Tool descriptions updated — all browser tools tell AI to call `browser_done` when done
-- **Multi-client safe orchestration** — `browser_stop` and `cleanup()` no longer hard-kill the shared server/Chrome processes, allowing multiple AIs to safely share the singleton backend.
-- **Strict Port Hijack safety** — `ensureBrowserReady()` strictly checks for the extension `service_worker` and fatally crashes if it's missing (prevents hijacking unprotected Chrome windows).
+- **Multi-client safe orchestration** — `browser_stop` and `cleanup()` no longer hard-kill the shared server/Chromium processes, allowing multiple AIs to safely share the singleton backend.
+- **Strict Port Hijack safety** — `ensureBrowserReady()` strictly checks for the extension `service_worker` and fatally crashes if it's missing (prevents hijacking unprotected Chromium windows).
 - **Atomic File JSON Safety** — `config.json` and `env.js` writes are now perfectly atomic via `.tmp` and `fs.renameSync`.
 - **Bulletproof hit-testing** — Switched `sleep(500)` to `requestAnimationFrame` for lightning-fast, guaranteed CDP layout flushes.
 
@@ -133,49 +136,54 @@ AI calls browser_stop
 - Recordings at `~/.web-mcp/recordings/`
 - `server/logger.ts` — Persistent file logger with 10MB rotation, 7 files kept at `~/.web-mcp/logs/server.log`
 
-### Chrome Extension
+### Chromium Extension
 - `manifest.json` — MV3, permissions: sidePanel, tabs, activeTab
-- `service_worker.js` — SSE client with periodic reconnection, broadcasts LOCK_STATE to tabs. Now includes a **heartbeat monitor**: pings the local server every 3s and automatically self-destructs (closes all Chrome windows) if the server goes offline for >60s, preventing "Zombie Chrome" memory leaks.
-- `content.js` — Blocking overlay with Hover.dev-style ambient light sweep + centered status bar. CSS `pointer-events: auto` blocks user mouse/touch. No JS capture listeners (they blocked AI tool events from CDP). Status bar shows: animated premium orb + status text + "Open Sidebar" + "Stop" buttons.
+- `service_worker.js` — SSE client with periodic reconnection, broadcasts LOCK_STATE to tabs. Now includes a **heartbeat monitor**: pings the local server every 3s and automatically self-destructs (closes all Chromium windows) if the server goes offline for >60s, preventing "Zombie Chromium" memory leaks.
+- `content.js` — Blocking overlay with Hover.dev-style ambient light sweep + centered status bar. CSS `pointer-events: auto` blocks user mouse/touch. No JS capture listeners (they blocked AI tool events from CDP). Status bar shows: animated standard orb + status text + "Open Sidebar" + "Stop" buttons.
 - `sidepanel.html/js` — Dark-themed activity feed with active task card and dune-wind gradient.
 - `popup.html/js` — Status popup
 
-### Configuration
-- `~/.web-mcp/config.json` — Server port, Chrome port, logging level
-- `~/.config/opencode/opencode.json` — MCP entry for Web MCP
+### Configuration Files by Client
+- **Web MCP Config**: `~/.web-mcp/config.json` — Configures local coordinate server and browser settings.
+- **OpenCode**: `~/.opencode.json` (primary config file, falls back to `~/.config/opencode/opencode.json` on older versions). Standard `mcpServers` JSON block.
+- **Claude Desktop**: macOS (`~/Library/Application Support/Claude/claude_desktop_config.json`), Windows Roaming (`~/AppData/Roaming/Claude/claude_desktop_config.json`), Linux (`~/.config/Claude/claude_desktop_config.json`).
+- **Claude Code (CLI)**: `~/.claude/settings.json` (falls back to legacy `~/.claude.json`).
+- **Cursor**: `~/.cursor/mcp.json`.
+- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`.
+- **Zed Editor**: Windows Roaming (`~/AppData/Roaming/Zed/settings.json`), macOS (`~/Library/Application Support/Zed/settings.json`), Linux (`~/.config/zed/settings.json`). Configured under the `context_servers` JSON key.
+- **Sourcegraph Cody**: Windows Roaming (`~/AppData/Roaming/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json`), macOS (`~/Library/Application Support/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json`), Linux (`~/.config/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json`).
+- **Roo Code (Cline)**: `~/.cline/data/settings/cline_mcp_settings.json`.
+- **OpenAI Codex**: `~/.codex/config.toml` (TOML format) and auto-generated instructions at `~/.codex/web-mcp-instructions.md` via the `model_instructions_file` configuration directive.
+- **Antigravity IDE**: `~/.gemini/antigravity/mcp_config.json`.
+- **ChatGPT Desktop**: Manually configured bridge connection via settings.
 
 ## What Is Pending
 
 ### Not Yet Implemented
-1. **Chrome Web Store publication** — Extension should be published for clean install (no nudge bar)
-2. **Step-level locking** — Currently hard lock during entire session; could unlock between steps
-3. **User takeover** — "Take Control" button in overlay exists but doesn't communicate back to wrapper
-4. **Session recordings playback** — Recordings are saved but no UI to replay them
-5. **Error recovery** — If Chrome crashes mid-session, wrapper should detect and restart
-6. **Multi-tab awareness** — Sidebar could show which tab is being controlled
-7. **Screenshot capture** — Could auto-screenshot after each action for visual history
-
-### Known Issues
-1. **`--load-extension` nudge bar** — Chrome shows "Disable developer mode extensions" banner on each launch. Fixed by Chrome Web Store publication.
-2. **Global install is symlink** — `npm install -g` from local dir creates symlink, not copy. Works for dev, but published package will be a real copy.
+1. **Chrome Web Store publication** — Extension should be published for clean install (no developer mode banner warnings).
+2. **Step-level locking** — Currently, hard lock is applied during the entire session; could unlock between steps.
+3. **Session recordings playback** — Action recordings are saved but there is no UI to replay them.
+4. **Multi-tab awareness** — Sidebar could show which tab is being controlled.
 
 ### Technical Debt
-1. **ESM/CJS hybrid** — Wrapper and server output ESM, CLI uses dynamic imports. Could simplify.
-2. **chrome-devtools-mcp spawn** — Currently uses `npx chrome-devtools-mcp` which may be slow. Could use `require.resolve` for direct binary path.
-3. **Config deep merge** — Simple recursive merge, could use a proper library
-4. **No tests** — No unit or integration tests exist
+1. **No tests** — Unit or integration tests do not yet exist.
+2. **chrome-devtools-mcp spawn** — Currently uses `npx chrome-devtools-mcp`. Could use a direct relative binary path or imported module.
 
 ## File Structure
 
 ```
-C:\Users\admin\web-mcp\
+d:\amit\browser-pilot\
 ├── bin/
 │   └── web-mcp.js          # CLI entry point (ESM, dynamic imports)
 ├── src/
 │   ├── cli/
-│   │   ├── setup.ts              # web-mcp setup
-│   │   ├── stop.ts               # web-mcp stop
-│   │   └── status.ts             # web-mcp status
+│   │   ├── browser.ts            # Launches browser with DevMode and profile configuration
+│   │   ├── interactive.ts        # Interactive command menu system
+│   │   ├── orb.ts                # Visual terminal orb tracking orb
+│   │   ├── setup.ts              # Configuration setups for all AI clients
+│   │   ├── status.ts             # Status diagnostics checking
+│   │   ├── stop.ts               # Processes termination (SIGTERM/kill)
+│   │   └── troubleshoot.ts       # Environment cleaner and troubleshooter
 │   ├── server/
 │   │   ├── server.ts             # Express HTTP server (port 3026)
 │   │   └── logger.ts             # Persistent file logger with rotation
@@ -192,7 +200,7 @@ C:\Users\admin\web-mcp\
 │       └── wrapper.js + wrapper.min.js
 ├── scripts/
 │   └── bundle.mjs                # esbuild bundler script
-├── extension/                    # Chrome extension (Manifest V3)
+├── extension/                    # Chromium extension (Manifest V3)
 │   ├── manifest.json
 │   ├── service_worker.js
 │   ├── content.js
@@ -217,9 +225,9 @@ C:\Users\admin\web-mcp\
 - Lines 95-106: Logging
 - Lines 108-177: Config loading (getDefaultConfig, loadConfig, deepMerge)
 - Lines 179-226: Health checks (checkServerHealth, checkChromeHealth, waitForHealthy)
-- Lines 228-255: Chrome detection (findChromePath)
+- Lines 228-255: Chromium detection (findChromePath)
 - Lines 257-316: Server management (startServer)
-- Lines 318-387: Chrome management (launchChrome — with --load-extension)
+- Lines 318-387: Chromium management (launchChrome — with --load-extension)
 - Lines 389-444: Sidebar management (httpRequest, ensureSidebarActive, endSidebar, addSidebarAction)
 - Lines 446-473: chrome-devtools-mcp connection (connectToChromeDevtoolsMcp — idempotent)
 - Lines 475-530: ensureBrowserReady (auto-start pattern)
@@ -248,9 +256,9 @@ C:\Users\admin\web-mcp\
 
 ### content.js — Blocking Overlay + Hover.dev Ambient Light
 - Creates full-page transparent overlay div with `pointer-events: auto`
-- Injects a dual-layer, 4-second rotating conic-gradient (a sharp 2px border trace + a heavily blurred inner glow) to create a premium ambient light sweep.
+- Injects a dual-layer, 4-second rotating conic-gradient (a sharp 2px border trace + a heavily blurred inner glow) to create a ambient light sweep.
 - CSS overlay blocks user mouse/touch interactions (no JS capture listeners)
-- Status bar centered at bottom (`bp-action-bar-root`): Premium tracking orb + status text + "Open Sidebar" button + "Stop" button.
+- Status bar centered at bottom (`bp-action-bar-root`): standard tracking orb + status text + "Open Sidebar" button + "Stop" button.
 - "Stop" button opens a halt dialog.
 - "Open Sidebar" button sends a message to open the native side panel.
 - Listens for LOCK_STATE messages from service worker
@@ -262,22 +270,36 @@ C:\Users\admin\web-mcp\
 ```json
 {
   "server": { "port": 3026 },
-  "chrome": { "port": 9222, "executable": "auto-detect" },
+  "chrome": { 
+    "port": 9222, 
+    "executable": "auto-detect",
+    "profileDir": "~/.web-mcp/chromium-profile-v2"
+  },
   "logging": { "level": "info" }
 }
 ```
 
-### ~/.config/opencode/opencode.json (relevant section)
+### ~/.opencode.json (OpenCode Configuration)
 ```json
 {
-  "mcp": {
+  "mcpServers": {
     "web-mcp": {
-      "type": "local",
-      "command": ["node", "C:\\Users\\admin\\web-mcp\\dist\\mcp\\wrapper.js"],
+      "type": "stdio",
+      "command": "web-mcp",
+      "args": ["mcp"],
       "enabled": true
     }
   }
 }
+```
+
+### ~/.codex/config.toml (OpenAI Codex Configuration)
+```toml
+model_instructions_file = "C:/Users/admin/.codex/web-mcp-instructions.md"
+
+[mcp_servers.web-mcp]
+command = "web-mcp"
+args = ["mcp"]
 ```
 
 ## Development Commands
@@ -326,8 +348,8 @@ npm publish
 
 ### Modifying the extension
 1. Edit files in `extension/`
-2. No build step needed — Chrome loads them directly
-3. Reload extension in Chrome: `chrome://extensions/` → click reload icon
+2. No build step needed — Chromium loads them directly
+3. Reload extension in Chromium: `chrome://extensions/` → click reload icon
 
 ### Testing the wrapper standalone
 ```bash
@@ -355,7 +377,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}
 | Error handling | Return error text, don't throw | AI can read the error and retry/adjust |
 | Sidebar logging | Every tool call | Real-time activity feed |
 | Code protection | esbuild minification | Obfuscated .min.js output for npm publishing |
-| `--load-extension` | Auto-load extension | No manual install step, works in Chrome 148+ |
+| `--load-extension` | Auto-load extension | No manual install step, works in Chromium 148+ |
 | Hard lock | Full-page overlay | CSS `pointer-events: auto` blocks mouse/touch; no JS listeners (blocked AI tools) |
 | 90-second idle timeout | Auto-close sidebar | Safety fallback if AI forgets `browser_done` |
 | `browser_done` tool | Explicit completion signal | AI tells us when work is done; overlay hides, lock released |
@@ -363,12 +385,12 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}
 | Session state in server | In-memory | Simple for testing, no persistence needed |
 | PID file at config dir | `~/.web-mcp/server.pid` | Survives project directory changes |
 | chrome-devtools-mcp as dependency | Regular dependency | Single `npm install` gets everything |
-| Separate Chrome profile | `~/.web-mcp/chrome-profile/` | Isolated from user's everyday Chrome |
+| Separate Chromium profile | `~/.web-mcp/chromium-profile/` | Isolated from user's everyday Chromium |
 
 ## References
 
 - [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)
 - [chrome-devtools-mcp](https://www.npmjs.com/package/chrome-devtools-mcp)
-- [Chrome Extension MV3](https://developer.chrome.com/docs/extensions/develop/migrate)
-- [Chrome Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel)
+- [Chromium Extension MV3](https://developer.chrome.com/docs/extensions/develop/migrate)
+- [Chromium Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel)
 - [Antigravity Browser Automation Research](https://alokbishoyi.com/blogposts/reverse-engineering-browser-automation.html)

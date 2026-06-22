@@ -51,14 +51,14 @@ export async function getStatus(): Promise<string[]> {
     lines.push("         Health: \x1b[31mNot responding\x1b[0m");
   }
 
-  // Check Chrome
+  // Check Chromium
   try {
     const resp = await fetch("http://127.0.0.1:" + CHROME_PORT + "/json/version", { signal: AbortSignal.timeout(1000) });
     const data = await resp.json() as any;
-    lines.push("Chrome:  Running (port " + CHROME_PORT + ")");
+    lines.push("Chromium:  Running (port " + CHROME_PORT + ")");
     lines.push("         Browser: " + (data.browser || "Unknown"));
   } catch {
-    lines.push("Chrome:  Not running");
+    lines.push("Chromium:  Not running");
   }
 
   // Check config

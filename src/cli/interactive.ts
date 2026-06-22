@@ -5,12 +5,12 @@ type ViewState = "MAIN" | "SETUP_MENU" | "UNINSTALL_MENU" | "INFO_VIEW";
 const MAIN_OPTIONS = [
   { value: "setup", label: "Configure AI Client (Setup)" },
   { value: "test", label: "Test Setup & Configurations" },
-  { value: "browser", label: "Launch Chrome Manually" },
+  { value: "browser", label: "Launch Browser Manually" },
   { value: "troubleshoot", label: "Troubleshoot & Fix Issues" },
   { value: "uninstall", label: "Uninstall Web MCP" },
-  { value: "status", label: "Check Server & Chrome Status" },
-  { value: "stop", label: "Stop Server & Chrome" },
-  { value: "help", label: "Show Help" },
+  { value: "status", label: "Check Server & Chromium Status" },
+  { value: "stop", label: "Stop Server & Chromium" },
+  { value: "help", label: "CLI Commands & Shortcuts" },
   { value: "about", label: "About Web MCP" },
   { value: "exit", label: "Exit" }
 ];
@@ -176,17 +176,17 @@ export async function run(startState: ViewState = "MAIN", initialInfoLines: stri
               isProcessing = false;
             } else if (sel === "browser") {
               isProcessing = true;
-              infoLines = ["\x1b[36mLaunching Chrome...\x1b[0m"];
+              infoLines = ["\x1b[36mLaunching Chromium...\x1b[0m"];
               currentState = "INFO_VIEW";
               const { launchBrowser } = await import("./browser.js");
-              infoLines = await launchBrowser();
+              infoLines = await launchBrowser((lines) => { infoLines = lines; });
               isProcessing = false;
             } else if (sel === "troubleshoot") {
               isProcessing = true;
               infoLines = ["\x1b[36mTroubleshooting...\x1b[0m"];
               currentState = "INFO_VIEW";
               const { runTroubleshooter } = await import("./troubleshoot.js");
-              infoLines = await runTroubleshooter();
+              infoLines = await runTroubleshooter((lines) => { infoLines = lines; });
               isProcessing = false;
             } else if (sel === "status") {
               isProcessing = true;
@@ -210,11 +210,11 @@ export async function run(startState: ViewState = "MAIN", initialInfoLines: stri
                 "  web-mcp          Open the interactive dashboard",
                 "  web-mcp mcp      Run MCP server (used automatically by AI clients)",
                 "  web-mcp setup    Configure AI Client (Setup) or Uninstall",
-                "  web-mcp browser  Launch the isolated Chrome browser manually",
+                "  web-mcp browser  Launch the isolated Chromium browser manually",
                 "  web-mcp troubleshoot  Troubleshoot and fix environment issues",
                 "  web-mcp test     Test Setup & Configurations",
-                "  web-mcp status   Check Server & Chrome Status",
-                "  web-mcp stop     Stop Server & Chrome",
+                "  web-mcp status   Check Server & Chromium Status",
+                "  web-mcp stop     Stop Server & Chromium",
                 "  web-mcp help     Show this help menu",
                 "  web-mcp about    About Web MCP"
               ];
@@ -223,9 +223,9 @@ export async function run(startState: ViewState = "MAIN", initialInfoLines: stri
               infoLines = [
                 "\x1b[1mWeb MCP - In-Browser Copilot\x1b[0m",
                 "",
-                "Web MCP is an advanced browser automation tool designed for AI assistants.",
-                "It uses a local server and a dedicated Chrome extension to provide a",
-                "collision-free, visually stunning browser automation experience."
+                "Web MCP is a dedicated browser automation layer for AI assistants.",
+                "It runs a local server and Chromium extension to ensure stable,",
+                "collision-free execution with complete visual transparency."
               ];
               currentState = "INFO_VIEW";
             }

@@ -1,19 +1,27 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { spawn, execSync } from "child_process";
+import { spawn, exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 
 async function findChromePath(): Promise<string> {
+  try {
+    const puppeteer = (await import("puppeteer")).default;
+    // Attempt to get the executable path
+    let pptrPath = await puppeteer.executablePath();
+    if (fs.existsSync(pptrPath)) {
+      return pptrPath;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+
+  // Fallback to system Chromium if puppeteer fails
   const paths = [
-    path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
-    path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
-    path.join(os.homedir(), "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe"),
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    path.join(os.homedir(), "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser"
   ];
@@ -22,33 +30,27 @@ async function findChromePath(): Promise<string> {
     if (fs.existsSync(p)) return p;
   }
 
-  // Fallback to puppeteer (slow)
-  try {
-    const puppeteer = (await import("puppeteer")).default;
-    const pptrPath = await puppeteer.executablePath();
-    if (fs.existsSync(pptrPath)) {
-      return pptrPath;
-    }
-  } catch (e) {
-    // Ignore error
-  }
-
-  throw new Error("Chrome not found.");
+  throw new Error("Chromium not found. Please install puppeteer properly or install chromium manually.");
 }
 
-export async function launchBrowser(): Promise<string[]> {
+export async function launchBrowser(onProgress?: (lines: string[]) => void): Promise<string[]> {
   const lines: string[] = [];
-  lines.push("Launching isolated Chrome with Web MCP extension...");
-  
+  const notify = () => { if (onProgress) onProgress([...lines]); };
+
+  lines.push("Launching dedicated Chromium browser with Web MCP extension...");
+  lines.push("\x1b[90m(Using a managed Chromium instance because modern Google Chromium blocks automated extension loading)\x1b[0m");
+  notify();
+
   let chromeExe;
   try {
     chromeExe = await findChromePath();
   } catch (err) {
     lines.push("\x1b[31mERROR: " + (err as Error).message + "\x1b[0m");
+    notify();
     return lines;
   }
 
-  const profileDir = path.join(CONFIG_DIR, "chrome-profile-v2");
+  const profileDir = path.join(CONFIG_DIR, "chromium-profile-v2");
   const extensionDir = path.join(CONFIG_DIR, "extension");
 
   try {
@@ -64,7 +66,7 @@ export async function launchBrowser(): Promise<string[]> {
       throw new Error("Source extension directory not found.");
     }
 
-    // Clear Chrome extension caches
+    // Clear Chromium extension caches
     const defaultExt = path.join(profileDir, "Default", "Extensions");
     if (fs.existsSync(defaultExt)) fs.rmSync(defaultExt, { recursive: true, force: true });
     const crxCache = path.join(profileDir, "extensions_crx_cache");
@@ -90,6 +92,7 @@ export async function launchBrowser(): Promise<string[]> {
 
   } catch (e) {
     lines.push("\x1b[31mERROR: Failed to copy extension: " + (e as Error).message + "\x1b[0m");
+    notify();
     if (!fs.existsSync(extensionDir)) return lines;
   }
 
@@ -97,14 +100,14 @@ export async function launchBrowser(): Promise<string[]> {
     "--remote-debugging-port=9222",
     `--user-data-dir=${profileDir}`,
     `--load-extension=${extensionDir}`,
-    `--disable-extensions-except=${extensionDir}`,
-    "--enable-automation",
+    "--disable-blink-features=AutomationControlled",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-popup-blocking",
     "--disable-translate",
     "--disable-fre",
-    "https://example.com"
+    "https://example.com",
+    "--disable-features=DisableLoadExtensionCommandLineSwitch,ExtensionDisableUnsupportedDeveloper"
   ];
 
   const cleanEnv: Record<string, string> = {};
@@ -116,15 +119,15 @@ export async function launchBrowser(): Promise<string[]> {
     }
   }
 
-  console.log("Chrome args:", args);
-
-  // Kill existing isolated profile process before relaunch
+  // Kill existing isolated profile process before relaunch (non-blocking)
   try {
     if (process.platform === 'win32') {
-      execSync(`wmic process where "name='chrome.exe' and commandline like '%chrome-profile-v2%'" call terminate`, { stdio: 'ignore' });
+      spawn('wmic', ['process', 'where', `name='chrome.exe' and commandline like '%chromium-profile-v2%'`, 'call', 'terminate'], { detached: true, stdio: 'ignore' }).unref();
     } else {
-      execSync(`pkill -f "user-data-dir=${profileDir}"`, { stdio: 'ignore' });
+      spawn('pkill', ['-f', `user-data-dir=${profileDir}`], { detached: true, stdio: 'ignore' }).unref();
     }
+    // Give it a moment to terminate before we relaunch
+    await new Promise(r => setTimeout(r, 500));
   } catch (e) {
     // Ignore error
   }
@@ -136,6 +139,7 @@ export async function launchBrowser(): Promise<string[]> {
   });
 
   proc.unref();
-  lines.push("\x1b[32mChrome launched successfully! You can now close this terminal.\x1b[0m");
+  lines.push("\x1b[32mChromium launched successfully! You can now close this terminal.\x1b[0m");
+  notify();
   return lines;
 }

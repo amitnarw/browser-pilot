@@ -31,8 +31,8 @@ export async function stopProcesses(): Promise<string[]> {
     lines.push("No server PID file found");
   }
 
-  // Stop Chrome with our profile
-  const profileDir = path.join(CONFIG_DIR, "chrome-profile-v2");
+  // Stop Chromium with our profile
+  const profileDir = path.join(CONFIG_DIR, "chromium-profile-v2");
   const winProfileDir = profileDir.replace(/\\/g, "\\\\");
   try {
     if (process.platform === "win32") {
@@ -42,11 +42,11 @@ export async function stopProcesses(): Promise<string[]> {
       );
     } else {
       // macOS / Linux
-      await execAsync(`pkill -f "chrome.*\\.web-mcp/chrome-profile-v2"`, { timeout: 10000 });
+      await execAsync(`pkill -f "chrome.*\\.web-mcp/chromium-profile-v2"`, { timeout: 10000 });
     }
-    lines.push("Stopped Chrome instances with Web MCP profile");
+    lines.push("Stopped Chromium instances with Web MCP profile");
   } catch {
-    lines.push("No Chrome instances found with Web MCP profile");
+    lines.push("No Chromium instances found with Web MCP profile");
   }
 
   return lines;

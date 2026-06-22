@@ -78,12 +78,12 @@
     "  font-family: var(--bp-font-family); pointer-events: auto; cursor: default;",
     "}",
     "@keyframes bp-slide-up { from { transform: translateX(-50%) translateY(100px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }",
-    "/* --- PREMIUM ORB CSS --- */",
+    "/* --- standard ORB CSS --- */",
     "@keyframes orb-blink { 0%, 96%, 98% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }",
     "@keyframes neon-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }",
     "@keyframes mesh-flow { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }",
-    ".bp-premium-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }",
-    ".bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: mesh-flow 4s ease-in-out infinite; border: none; }",
+    ".bp-standard-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }",
+    ".bp-standard-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: mesh-flow 4s ease-in-out infinite; border: none; }",
     ".bp-orb-eyes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 3px; z-index: 2; transition: transform 0.1s ease-out; transform: translate(var(--eye-x, 0px), var(--eye-y, 0px)); }",
     ".bp-orb-eye { width: 4px; height: 4px; background: #adc6ff; border-radius: 50%; animation: orb-blink 4s infinite; box-shadow: 0 0 4px rgba(173,198,255,0.5); }",
     ".bp-orb-eyes.orb-typing { animation: orb-eyes-dart 1s infinite alternate; }",
@@ -119,16 +119,28 @@
     ".bp-dialog-btn-stop { background: rgba(147,0,10,0.3); color: #ffb4ab; }",
     ".bp-dialog-btn-stop:hover { background: rgba(147,0,10,0.4); }",
     ".bp-badge {",
-    "  position: fixed; bottom: 16px; right: 16px; z-index: 2147483646;",
-    "  background: rgba(255,255,255,0.1); border: none; border-radius: 8px;",
-    "  padding: 8px 12px; display: flex; align-items: center; gap: 8px;",
-    "  cursor: pointer; font-family: 'Inter', sans-serif;",
-    "  font-size: 12px; color: #c1c6d7; box-shadow: 0 4px 12px rgba(0,0,0,0.3);",
+    "  position: fixed; bottom: 20px; right: 20px; z-index: 2147483646;",
+    "  background: rgba(19, 19, 21, 0.85); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);",
+    "  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 9999px;",
+    "  padding: 6px 14px 6px 10px; display: flex; align-items: center; gap: 10px;",
+    "  cursor: pointer; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;",
+    "  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.05);",
+    "  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);",
+    "  user-select: none; pointer-events: auto;",
     "}",
-    ".bp-badge:hover { background: rgba(255,255,255,0.15); }",
-    ".bp-badge-dot { width: 8px; height: 8px; border-radius: 50%; background: #adc6ff; box-shadow: 0 0 8px rgba(173,198,255,0.4); }",
-    ".bp-badge-title { font-weight: 600; font-size: 11px; color: #e4e2e4; }",
-    ".bp-badge-sub { font-size: 10px; color: #8b90a0; }",
+    ".bp-badge:hover {",
+    "  background: rgba(25, 25, 28, 0.95);",
+    "  border-color: rgba(0, 122, 255, 0.4);",
+    "  transform: translateY(-2px);",
+    "  box-shadow: 0 12px 35px rgba(0, 122, 255, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.05);",
+    "}",
+    ".bp-badge:active { transform: translateY(0); }",
+    ".bp-badge-title { font-weight: 600; font-size: 13px; color: #e4e2e4; letter-spacing: -0.01em; }",
+    ".bp-badge-status {",
+    "  font-size: 10px; font-weight: 700; color: #adc6ff; text-transform: uppercase;",
+    "  letter-spacing: 0.05em; background: rgba(0, 122, 255, 0.15);",
+    "  padding: 2px 8px; border-radius: 9999px; border: 1px solid rgba(0, 122, 255, 0.25);",
+    "}",
     ".bp-chat-bubble {",
     "  position: absolute; bottom: 130%; left: 23px; transform: translateX(-50%) translateY(10px);",
     "  background: #2a2a2c;",
@@ -211,7 +223,7 @@
   function resetIdleTimer(){if(idleTimer)clearTimeout(idleTimer);idleTimer=setTimeout(function(){console.log("[Web MCP] Idle timeout");},IDLE_TIMEOUT_MS);}
   function clearIdleTimer(){if(idleTimer)clearTimeout(idleTimer);idleTimer=null;}
 
-  function startStateCheck(){if(stateCheckInterval)clearInterval(stateCheckInterval);stateCheckInterval=setInterval(async function(){if(lastActiveState!==true)return;try{var port=globalThis.WEB_MCP_PORT||3026;var r=await fetch("http://localhost:"+port+"/sidebar/state");var s=await r.json();if(!s.active){console.log("[Web MCP] State check: session ended");lastActiveState=false;clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}catch(e){}},STATE_CHECK_INTERVAL_MS);}
+  function startStateCheck(){if(stateCheckInterval)clearInterval(stateCheckInterval);stateCheckInterval=setInterval(async function(){if(lastActiveState!==true)return;try{var port=globalThis.WEB_MCP_PORT||3026;var r=await fetch("http://127.0.0.1:"+port+"/sidebar/state");var s=await r.json();if(!s.active){console.log("[Web MCP] State check: session ended");lastActiveState=false;clearIdleTimer();removeOverlay();removeGradientAnimation();showBadge();}}catch(e){}},STATE_CHECK_INTERVAL_MS);}
   function stopStateCheck(){if(stateCheckInterval){clearInterval(stateCheckInterval);stateCheckInterval=null;}}
 
   function createOverlay(){
@@ -222,8 +234,8 @@
     container.className = "bp-action-bar-root";
 
     var wrapper = document.createElement("div");
-    wrapper.className = "bp-premium-wrapper";
-    var orb = document.createElement("div"); orb.className = "bp-premium-orb";
+    wrapper.className = "bp-standard-wrapper";
+    var orb = document.createElement("div"); orb.className = "bp-standard-orb";
     var eyes = document.createElement("div"); eyes.className = "bp-orb-eyes"; eyes.id = "bp-orb-eyes";
     var eye1 = document.createElement("div"); eye1.className = "bp-orb-eye";
     var eye2 = document.createElement("div"); eye2.className = "bp-orb-eye";
@@ -301,24 +313,23 @@
       }
     });
     
-    window.addEventListener("mousemove", trackEyes);
-    
     return overlay;
   }
 
   function trackEyes(e) {
-    var eyes = document.getElementById("bp-orb-eyes");
-    if(!eyes) return;
-    var rect = eyes.getBoundingClientRect();
-    var cx = rect.left + rect.width / 2;
-    var cy = rect.top + rect.height / 2;
-    var dx = e.clientX - cx;
-    var dy = e.clientY - cy;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    var maxDist = 3;
-    if(dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
-    eyes.style.setProperty('--eye-x', dx + 'px');
-    eyes.style.setProperty('--eye-y', dy + 'px');
+    var eyesList = document.querySelectorAll(".bp-orb-eyes");
+    eyesList.forEach(function(eyes) {
+      var rect = eyes.getBoundingClientRect();
+      var cx = rect.left + rect.width / 2;
+      var cy = rect.top + rect.height / 2;
+      var dx = e.clientX - cx;
+      var dy = e.clientY - cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var maxDist = 3;
+      if(dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
+      eyes.style.setProperty('--eye-x', dx + 'px');
+      eyes.style.setProperty('--eye-y', dy + 'px');
+    });
   }
 
   function updateStatus(taskName,actionCount,actionType){
@@ -361,7 +372,7 @@
     }
   }
 
-  function removeOverlay(){if(!overlay)return;clearIdleTimer();stopStateCheck();window.removeEventListener("mousemove", trackEyes);if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;}
+  function removeOverlay(){if(!overlay)return;clearIdleTimer();stopStateCheck();if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;}
 
   function showStopDialog() {
     var dOverlay = document.createElement('div');
@@ -412,13 +423,31 @@
     if (badge) return;
     badge = document.createElement("div");
     badge.className = "bp-badge";
-    var dot = document.createElement("div");
-    dot.className = "bp-badge-dot";
+    
+    // Create standard tracking orb
+    var wrapper = document.createElement("div");
+    wrapper.className = "bp-standard-wrapper";
+    var orb = document.createElement("div"); orb.className = "bp-standard-orb";
+    var eyes = document.createElement("div"); eyes.className = "bp-orb-eyes";
+    var eye1 = document.createElement("div"); eye1.className = "bp-orb-eye";
+    var eye2 = document.createElement("div"); eye2.className = "bp-orb-eye";
+    eyes.appendChild(eye1); eyes.appendChild(eye2);
+    orb.appendChild(eyes);
+    wrapper.appendChild(orb);
+    badge.appendChild(wrapper);
+
+    // Title
     var text = document.createElement("div");
     text.className = "bp-badge-title";
-    text.innerText = "Web MCP Ready";
-    badge.appendChild(dot);
+    text.innerText = "Web MCP";
     badge.appendChild(text);
+
+    // Status label
+    var status = document.createElement("div");
+    status.className = "bp-badge-status";
+    status.innerText = "Ready";
+    badge.appendChild(status);
+
     badge.addEventListener("click", function() {
       try { chrome.runtime.sendMessage({type:"OPEN_SIDEBAR"}); } catch(e) {}
     });
@@ -445,11 +474,13 @@
     }
   });
 
+  window.addEventListener("mousemove", trackEyes);
+
   (async function(){
     console.log("[Web MCP] Initializing...");
     try {
       var port = globalThis.WEB_MCP_PORT || 3026;
-      var r = await fetch("http://localhost:" + port + "/sidebar/state");
+      var r = await fetch("http://127.0.0.1:" + port + "/sidebar/state");
       var s = await r.json();
       lastActiveState = !!s.active;
       if (s.active) {
@@ -473,7 +504,7 @@
       if(lastActiveState) return;
       try {
         var port = globalThis.WEB_MCP_PORT || 3026;
-        var r2 = await fetch("http://localhost:" + port + "/sidebar/state");
+        var r2 = await fetch("http://127.0.0.1:" + port + "/sidebar/state");
         var s2 = await r2.json();
         if (s2.active) {
           lastActiveState = true;

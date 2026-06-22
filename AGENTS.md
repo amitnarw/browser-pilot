@@ -4,47 +4,48 @@ This file provides critical context for AI agents working on the Web MCP project
 
 ## 🔴 CRITICAL: AI Behavior Rules (READ IMMEDIATELY)
 
-**1. NEVER Manually Start Chrome**: You MUST NOT run commands like `start chrome` or `chrome.exe` in powershell. The `web-mcp` MCP tools (like `browser_navigate`) will automatically launch Chrome for you if it is not running. 
-**2. NEVER Use `taskkill` on Chrome**: You MUST NOT run commands like `taskkill /f /im chrome.exe`. This kills the user's personal browsing sessions. If you absolutely must clean up stale processes, ONLY use the `web-mcp troubleshoot` command.
-**3. NEVER Try to Fix the Port**: If port 9222 is busy or Chrome fails to connect, do NOT try to kill all chromes or change the port manually. Report the error to the user or run `web-mcp troubleshoot`.
+**0. WE STRICTLY USE CHROMIUM**: We exclusively use a managed Chromium binary (via Puppeteer) downloaded automatically in the background. Modern Google Chrome blocks unpacked extensions, so **DO NOT** attempt to launch or connect to the user's system Google Chrome. The product relies on this dedicated Chromium instance.
+**1. NEVER Manually Start Chromium**: You MUST NOT run commands like `start chrome` or `chrome.exe` in powershell. The `web-mcp` MCP tools (like `browser_navigate`) will automatically launch the dedicated Chromium instance for you if it is not running. 
+**2. NEVER Use `taskkill` on Chromium**: You MUST NOT run commands like `taskkill /f /im chrome.exe`. This kills the user's personal browsing sessions. If you absolutely must clean up stale processes, ONLY use the `web-mcp troubleshoot` command.
+**3. NEVER Try to Fix the Port**: If port 9222 is busy or Chromium fails to connect, do NOT try to kill all chromes or change the port manually. Report the error to the user or run `web-mcp troubleshoot`.
 **4. NO CHEATING - SIMULATE REAL USERS**: The purpose of this tool is to test website functionality like a real user. You MUST NOT use `browser_navigate` to jump directly to internal pages or cheat by typing direct URLs. Use `browser_navigate` ONLY for the initial entry point, and then rely strictly on `browser_click`, `browser_type`, etc., to navigate the site.
 **5. HOLISTIC DEBUGGING REQUIRED**: You must look at the whole codebase and trace the full execution lifecycle end-to-end. Do not just focus on one isolated section or assume an isolated fix is sufficient. A bug or configuration generation issue in one file (e.g., `setup.ts`) can silently override and break fixes you made in another file (e.g., `wrapper.ts`). Always consider how your changes impact the whole system, and what other sections might be impacting the current problem.
 **6. CONSIDER PERSISTENT EXTERNAL STATE**: Configuration files (e.g., `~/.web-mcp/config.json`) survive package uninstallations, codebase rebuilds, and laptop restarts. Never assume `npm install` or restarting processes clears out stale application data.
 **7. VERIFY SYSTEM COMMANDS**: Do not blindly assume commands like `Stop-Process`, `pkill`, or `npm install -g .` worked. Always verify that your regex/filter actually matched the running processes, confirm they are dead, and read error logs carefully.
 ## 🔴 CRITICAL: Extension Reload Requirement
 
-**After EVERY code change to the extension, you MUST reload it in Chrome.**
+**After EVERY code change to the extension, you MUST reload it in Chromium.**
 
-Chrome "Load unpacked" extensions **do NOT auto-update** when files change.
+Chromium "Load unpacked" extensions **do NOT auto-update** when files change.
 
 ### Reload Steps
-1. Go to `chrome://extensions` in the AI-controlled Chrome window
+1. Go to `chrome://extensions` in the AI-controlled Chromium window
 2. Find **Web MCP**
 3. Click the **↻ reload icon** (circular arrow)
 4. **Refresh the page** (F5) where you want the sidebar to appear
 
 ### Rebuild + Reload Command
 ```powershell
-cd "D:\amit\web-mcp"
+cd "D:\amit\browser-pilot"
 npm run build
 npm run bundle
 ```
-Then reload the extension in Chrome.
+Then reload the extension in Chromium.
 
 ## Process Lifecycle
 
 ```
 OpenCode Chat → Spawns Wrapper (node wrapper.min.js)
                     ├── Starts Server (port 3026) — LONG LIVED
-                    ├── Launches Chrome (port 9222) — LONG LIVED
+                    ├── Launches Chromium (port 9222) — LONG LIVED
                     └── Connects to chrome-devtools-mcp
                         
-Wrapper dies → Server + Chrome SURVIVE temporarily, but will SELF-DESTRUCT.
+Wrapper dies → Server + Chromium SURVIVE temporarily, but will SELF-DESTRUCT.
 ```
 
-**Key rule:** The Server and Chrome are long-lived singleton processes designed to be shared across multiple AI clients (e.g. OpenCode and Cursor running simultaneously). 
-- If the wrapper dies (chat ends, crashes), the `service_worker` in Chrome will stop receiving heartbeat pings. After 60 seconds of silence, the Chrome extension will automatically close all windows to prevent "Zombie Chrome" resource leaks.
-- `browser_stop` **does NOT** kill the Chrome process or HTTP server anymore, as this would violently break other active AI clients sharing the session. It only disconnects the local wrapper.
+**Key rule:** The Server and Chromium are long-lived singleton processes designed to be shared across multiple AI clients (e.g. OpenCode and Cursor running simultaneously). 
+- If the wrapper dies (chat ends, crashes), the `service_worker` in Chromium will stop receiving heartbeat pings. After 60 seconds of silence, the Chromium extension will automatically close all windows to prevent "Zombie Chromium" resource leaks.
+- `browser_stop` **does NOT** kill the Chromium process or HTTP server anymore, as this would violently break other active AI clients sharing the session. It only disconnects the local wrapper.
 
 ### Kill All Stale Processes & Clear Caches
 ```powershell
@@ -58,7 +59,7 @@ web-mcp troubleshoot
 |------|-------|---------|
 | 1 | Server running? | `Invoke-RestMethod "http://localhost:3026/sidebar/state"` |
 | 2 | `active: true`? | Should show `active: true` in response |
-| 3 | Chrome on 9222? | `Invoke-RestMethod "http://127.0.0.1:9222/json/version"` |
+| 3 | Chromium on 9222? | `Invoke-RestMethod "http://127.0.0.1:9222/json/version"` |
 | 4 | Extension reloaded? | Go to `chrome://extensions` → click ↻ reload |
 | 5 | Content script injected? | F12 → Console → `document.getElementById("web-mcp-sidebar")` |
 | 6 | Console errors? | F12 → Console → look for `[Web MCP]` logs |
@@ -78,11 +79,11 @@ web-mcp troubleshoot
 **Fix:** Added `lastActiveState` tracking — only acts when state actually changes.
 
 ### 4. Extension Cache Auto-Clear
-**Problem:** Chrome cached old extension files (content.js with broken sidePanel.open()).
+**Problem:** Chromium cached old extension files (content.js with broken sidePanel.open()).
 **Fix:** `launchChrome()` now deletes `Default/Extensions/` and `extensions_crx_cache/` before launch.
 
 ### 5. Stale Process Cleanup
-**Problem:** Wrapper crashes left server + Chrome running as orphans.
+**Problem:** Wrapper crashes left server + Chromium running as orphans.
 **Fix:** Added `killStaleServer()` before starting new server + heartbeat check every 30 seconds.
 
 ### 6. fetchWithTimeout Bug Fix
@@ -131,9 +132,9 @@ web-mcp troubleshoot
 
 ## Key Fixes Applied (June 2026 - Concurrency & Lifecycle)
 
-### 16. Zombie Chrome Prevention (The Heartbeat)
-**Problem:** Wrappers crashing or being forcefully closed left Chrome running endlessly in the background.
-**Fix:** Implemented a heartbeat in `service_worker.js`. It pings the server every 3s. If the server goes offline for >60s, Chrome automatically self-destructs by closing all windows.
+### 16. Zombie Chromium Prevention (The Heartbeat)
+**Problem:** Wrappers crashing or being forcefully closed left Chromium running endlessly in the background.
+**Fix:** Implemented a heartbeat in `service_worker.js`. It pings the server every 3s. If the server goes offline for >60s, Chromium automatically self-destructs by closing all windows.
 
 ### 17. Multi-Agent Orchestration Safety
 **Problem:** If two OpenCode chats used Web MCP concurrently, one calling `browser_stop` would run `Stop-Process` and kill the shared server/browser, violently disconnecting the other agent.
@@ -143,8 +144,8 @@ web-mcp troubleshoot
 **Problem:** If `server.pid` was missing, but port 3026 was in use, `startServer()` crashed with `EADDRINUSE`.
 **Fix:** `killStaleServer()` now uses aggressive OS-level commands (`Get-NetTCPConnection` or `lsof`) to forcefully reclaim the port if the server fails the `/ping` check, bypassing the need for a PID file entirely.
 
-### 19. Strict Chrome Port Hijack Prevention
-**Problem:** If the user manually opened Chrome on port 9222, the AI would connect to it but silently fail to inject the extension, operating an unprotected browser.
+### 19. Strict Chromium Port Hijack Prevention
+**Problem:** If the user manually opened Chromium on port 9222, the AI would connect to it but silently fail to inject the extension, operating an unprotected browser.
 **Fix:** `ensureBrowserReady()` now strictly verifies the extension's `service_worker` is loaded. If missing, it throws a fatal error rather than hijacking the browser.
 
 ### 20. Atomic File JSON Safety
@@ -155,13 +156,40 @@ web-mcp troubleshoot
 **Problem:** The arbitrary `sleep(500)` before CDP clicks was brittle and slow.
 **Fix:** Replaced it with a native `requestAnimationFrame` layout flush injected via `evaluate_script`, mathematically guaranteeing the CSS pointer-events blocker is disabled before the click lands.
 
+### 22. Stealth Mode / CAPTCHA Bypass (v0.1.3)
+**Problem:** Google and other web applications blocked requests or presented constant CAPTCHAs due to the standard automation flag (`--enable-automation`).
+**Fix:** Replaced the `--enable-automation` flag with `--disable-blink-features=AutomationControlled` in both wrapper and browser runners to bypass standard bot/automation detection.
+
+### 23. Interactive Browser Launch Freeze (v0.1.3)
+**Problem:** In `src/cli/browser.ts`, executing the `wmic` process termination was synchronous/awaited, causing the interactive command line interface to freeze.
+**Fix:** Refactored the process termination check to use `spawn` with `{ detached: true, stdio: 'ignore' }.unref()` so that it runs asynchronously without blocking execution.
+
+### 24. Puppeteer Dynamic Import (v0.1.3)
+**Problem:** Using standard CJS `require("puppeteer")` inside the ES Modules output files of the wrapper was throwing import errors.
+**Fix:** Refactored `findChromePath` to dynamically load Puppeteer using `await import("puppeteer")`.
+
+### 25. OpenAI Codex Integration Support (v0.1.3)
+**Problem:** OpenAI Codex does not use standard JSON MCP settings or would bypass Web MCP in favor of its built-in browser engine.
+**Fix:** Configured the setup script to automatically parse, write, and append config settings to Codex's `~/.codex/config.toml` using the correct `[mcp_servers.web-mcp]` block and referencing a generated `~/.codex/web-mcp-instructions.md` model instructions file (using `model_instructions_file = "..."`). This instructs the Codex model to always prefer Web MCP over its built-in browser.
+
+### 26. Unified Configuration Paths and Keys (v0.1.3)
+**Problem:** Configuration setup used outdated or incorrect paths/keys for several clients (e.g. Zed and Cody using LOCALAPPDATA instead of APPDATA on Windows, OpenCode config keys nested under `mcp` instead of standard `mcpServers`).
+**Fix:** Updated `src/cli/setup.ts` to adhere to the latest 2026 specifications:
+- **OpenCode**: `~/.opencode.json` (primary config) with standard `mcpServers` key.
+- **Claude Desktop**: Support for macOS, Windows (APPDATA Roaming), and Linux (`~/.config/Claude/claude_desktop_config.json`) paths.
+- **Claude Code (CLI)**: `~/.claude/settings.json` (primary config).
+- **Zed**: `%APPDATA%/Zed/settings.json` on Windows (using Roaming).
+- **Sourcegraph Cody**: `%APPDATA%/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json` on Windows.
+- **Roo Code (Cline)**: `~/.cline/data/settings/cline_mcp_settings.json`.
+- **OpenAI Codex**: `~/.codex/config.toml` (TOML format support).
+
 ## How It Works (End-to-End Flow)
 
 1. **User asks AI:** `"go to google and search for phone"`
 2. **AI calls `browser_navigate`** → `callChromeDevtoolsTool()`
 3. **`ensureBrowserReady()`** runs:
    - Starts server on port 3026 (if not running)
-   - Launches Chrome with extension on port 9222 (if not running)
+   - Launches Chromium with extension on port 9222 (if not running)
    - Calls `/session/start` → sets `lockOwner: "agent"`
    - Calls `/sidebar/start` → sets `active: true`
    - Connects to chrome-devtools-mcp
@@ -177,13 +205,23 @@ web-mcp troubleshoot
 ## File Structure
 
 ```
-D:\amit\web-mcp\
+D:\amit\browser-pilot\
 ├── src/
-│   ├── mcp/wrapper.ts          # MCP server, 21 browser tools
-│   ├── server/server.ts        # HTTP server, session/sidebar state
-│   ├── server/logger.ts        # Persistent file logger with rotation
+│   ├── cli/                    # CLI commands (setup, stop, status, troubleshoot, browser)
+│   │   ├── browser.ts          # Launches browser with DevMode and profile
+│   │   ├── interactive.ts      # Interactive menu interface
+│   │   ├── orb.ts              # Terminal visual orb animation
+│   │   ├── setup.ts            # Configuration setups for all AI clients
+│   │   ├── status.ts           # Status diagnostic reporter
+│   │   ├── stop.ts             # Hard kill logic for server/browser
+│   │   └── troubleshoot.ts     # Process/cache cleaning troubleshooter
+│   ├── mcp/
+│   │   └── wrapper.ts          # MCP server, 21 browser tools
+│   ├── server/
+│   │   ├── server.ts           # HTTP server, session/sidebar state
+│   │   └── logger.ts           # Persistent file logger with rotation
 │   └── extension/              # SOURCE FILES: Edit extension code here!
-│       ├── manifest.json       # Chrome extension manifest
+│       ├── manifest.json       # Chromium extension manifest
 │       ├── service_worker.js   # SSE client, broadcasts LOCK_STATE
 │       ├── content.js          # Blocking overlay + status bar
 │       ├── popup.html          # Extension popup UI
@@ -204,11 +242,11 @@ D:\amit\web-mcp\
 # Run the built-in Troubleshooter to fix environment, process, or caching issues
 web-mcp troubleshoot
 
-# Launch Isolated Chrome Manually (for testing extension UI)
+# Launch Browser Manually (for testing extension UI)
 web-mcp browser
 
 # Rebuild everything
-cd "D:\amit\web-mcp"; npm run build; npm run bundle
+cd "D:\amit\browser-pilot"; npm run build; npm run bundle
 
 # Check server state
 Invoke-RestMethod "http://localhost:3026/sidebar/state" | ConvertTo-Json
@@ -220,14 +258,14 @@ Invoke-RestMethod "http://localhost:3026/debug" | ConvertTo-Json -Depth 3
 Invoke-RestMethod "http://localhost:3026/logs" | ConvertTo-Json -Depth 2
 
 # Start server manually
-node "D:\amit\web-mcp\dist\server\server.min.js"
+node "D:\amit\browser-pilot\dist\server\server.min.js"
 
-# Check Chrome remote debugging
+# Check Chromium remote debugging
 Invoke-RestMethod "http://127.0.0.1:9222/json/version" | ConvertTo-Json
 
-# Kill all Web MCP processes
-Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" -or $_.CommandLine -like "*chrome-devtools*" } | Stop-Process -Force
-Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | Stop-Process -Force
+# Kill all Web MCP processes (Windows PowerShell)
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { ($_.CommandLine -like "*web-mcp*" -or $_.CommandLine -like "*chrome-devtools*") -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 # Get server logs (persistent file)
 Get-Content "$env:USERPROFILE\.web-mcp\logs\server.log" -Tail 20
@@ -253,7 +291,7 @@ Invoke-RestMethod "http://localhost:3026/logs" | ConvertTo-Json -Depth 2
 The wrapper logs every step of `ensureBrowserReady()`:
 - `[ensureBrowserReady] Called. isInitializing=X session.status=X chromeDevtoolsClient=X sidebarActive=X`
 - `[ensureBrowserReady] Server healthy: true/false`
-- `[ensureBrowserReady] Chrome healthy: true/false`
+- `[ensureBrowserReady] Chromium healthy: true/false`
 - `[ensureBrowserReady] /session/start response: {...}`
 - `[ensureBrowserReady] sidebarActive=X — calling ensureSidebarActive if false...`
 - `[ensureSidebarActive] Calling /sidebar/start with taskName: X`
@@ -269,7 +307,7 @@ These logs appear in the OpenCode terminal (stderr) when running the wrapper.
 - **chrome-devtools-mcp connection** is non-fatal — sidebar works without it
 - **Extension must be reloaded** after every code change — this is the #1 cause of "sidebar not visible"
 - **Server is independent** of wrapper — survives wrapper crashes
-- **Chrome is independent** of wrapper — user can close it manually
+- **Chromium is independent** of wrapper — user can close it manually
 - **`browser_done`** signals task completion — AI should call it when done (90s idle timeout as fallback)
 - **CSS overlay** with `pointer-events: auto` blocks user mouse/touch — no JS capture listeners needed
 - **`isTrusted` does NOT work** for CDP events — `Input.dispatchMouseEvent/Key` creates trusted events

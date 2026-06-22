@@ -20,6 +20,11 @@ export const SETUP_OPTIONS = [
   { value: "claude-desktop", label: "Claude Desktop" },
   { value: "claude-code", label: "Claude Code (CLI)" },
   { value: "cursor", label: "Cursor" },
+  { value: "windsurf", label: "Windsurf (Codeium)" },
+  { value: "zed", label: "Zed Editor" },
+  { value: "cody", label: "Sourcegraph Cody" },
+  { value: "chatgpt", label: "ChatGPT Desktop (OpenAI)" },
+  { value: "openai-codex", label: "OpenAI Codex" },
   { value: "antigravity", label: "Antigravity IDE" },
   { value: "roo-code", label: "Roo Code (Cline)" },
   { value: "manual", label: "Other (Manual Setup)" },
@@ -32,6 +37,9 @@ export const UNINSTALL_OPTIONS = [
   { value: "claude-desktop", label: "Claude Desktop" },
   { value: "claude-code", label: "Claude Code (CLI)" },
   { value: "cursor", label: "Cursor" },
+  { value: "windsurf", label: "Windsurf (Codeium)" },
+  { value: "zed", label: "Zed Editor" },
+  { value: "cody", label: "Sourcegraph Cody" },
   { value: "antigravity", label: "Antigravity IDE" },
   { value: "roo-code", label: "Roo Code (Cline)" },
   { value: "cancel", label: "Cancel" }
@@ -39,28 +47,55 @@ export const UNINSTALL_OPTIONS = [
 
 function getConfigPath(choiceValue: string): string {
   if (choiceValue === "opencode") {
-    // OpenCode stores its global config here
-    return path.join(os.homedir(), ".config", "opencode", "opencode.json");
+    // OpenCode primary global config - ~/.opencode.json
+    // Fallback: ~/.config/opencode/opencode.json (older versions)
+    const primary = path.join(os.homedir(), ".opencode.json");
+    const fallback = path.join(os.homedir(), ".config", "opencode", "opencode.json");
+    return fs.existsSync(fallback) && !fs.existsSync(primary) ? fallback : primary;
   } else if (choiceValue === "claude-desktop") {
     if (process.platform === "win32") {
       return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude", "claude_desktop_config.json");
-    } else {
+    } else if (process.platform === "darwin") {
       return path.join(os.homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
+    } else {
+      return path.join(os.homedir(), ".config", "Claude", "claude_desktop_config.json");
     }
   } else if (choiceValue === "claude-code") {
-    return path.join(os.homedir(), ".claude.json");
+    // Claude Code updated path: ~/.claude/settings.json (new primary)
+    // ~/.claude.json is the legacy fallback still used by some versions
+    const newPath = path.join(os.homedir(), ".claude", "settings.json");
+    const legacyPath = path.join(os.homedir(), ".claude.json");
+    return fs.existsSync(newPath) ? newPath : legacyPath;
   } else if (choiceValue === "cursor") {
     return path.join(os.homedir(), ".cursor", "mcp.json");
+  } else if (choiceValue === "windsurf") {
+    return path.join(os.homedir(), ".codeium", "windsurf", "mcp_config.json");
+  } else if (choiceValue === "zed") {
+    if (process.platform === "win32") {
+      // Zed on Windows uses APPDATA (Roaming), not LOCALAPPDATA
+      return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Zed", "settings.json");
+    } else if (process.platform === "darwin") {
+      return path.join(os.homedir(), "Library", "Application Support", "Zed", "settings.json");
+    } else {
+      return path.join(os.homedir(), ".config", "zed", "settings.json");
+    }
+  } else if (choiceValue === "cody") {
+    // Sourcegraph Cody stores MCP config in VS Code's global storage
+    if (process.platform === "win32") {
+      return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "globalStorage", "sourcegraph.cody-ai", "mcp_servers.json");
+    } else if (process.platform === "darwin") {
+      return path.join(os.homedir(), "Library", "Application Support", "Code", "User", "globalStorage", "sourcegraph.cody-ai", "mcp_servers.json");
+    } else {
+      return path.join(os.homedir(), ".config", "Code", "User", "globalStorage", "sourcegraph.cody-ai", "mcp_servers.json");
+    }
   } else if (choiceValue === "antigravity") {
     return path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json");
   } else if (choiceValue === "roo-code") {
-    if (process.platform === "win32") {
-      return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
-    } else if (process.platform === "darwin") {
-      return path.join(os.homedir(), "Library", "Application Support", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
-    } else {
-      return path.join(os.homedir(), ".config", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json");
-    }
+    // Roo Code (Cline) updated global path: ~/.cline/data/settings/cline_mcp_settings.json
+    // Legacy path via VS Code globalStorage is no longer standard
+    return path.join(os.homedir(), ".cline", "data", "settings", "cline_mcp_settings.json");
+  } else if (choiceValue === "openai-codex") {
+    return path.join(os.homedir(), ".codex", "config.toml");
   }
   return "";
 }
@@ -69,16 +104,23 @@ export function getConfiguredClients(): string[] {
   const configured: string[] = [];
   
   for (const opt of SETUP_OPTIONS) {
-    if (opt.value === "manual" || opt.value === "cancel") continue;
+    if (opt.value === "manual" || opt.value === "cancel" || opt.value === "chatgpt") continue;
     
     const p = getConfigPath(opt.value);
     if (p && fs.existsSync(p)) {
       try {
-        const config = JSON.parse(fs.readFileSync(p, "utf8"));
-        if (opt.value === "opencode" && config?.mcp?.["web-mcp"]) {
-          configured.push(opt.value);
-        } else if (config?.mcpServers?.["web-mcp"]) {
-          configured.push(opt.value);
+        const content = fs.readFileSync(p, "utf8");
+        if (opt.value === "openai-codex") {
+          if (content.includes("[mcp_servers.web-mcp]")) {
+            configured.push(opt.value);
+          }
+        } else {
+          const config = JSON.parse(content);
+          if (opt.value === "zed" && config?.context_servers?.["web-mcp"]) {
+            configured.push(opt.value);
+          } else if (config?.mcpServers?.["web-mcp"]) {
+            configured.push(opt.value);
+          }
         }
       } catch {}
     }
@@ -95,7 +137,7 @@ export async function testConfigurations(): Promise<string[]> {
   let anyFound = false;
 
   for (const opt of SETUP_OPTIONS) {
-    if (opt.value === "manual" || opt.value === "cancel") continue;
+    if (opt.value === "manual" || opt.value === "cancel" || opt.value === "chatgpt") continue;
     
     const p = getConfigPath(opt.value);
     if (!p) continue;
@@ -104,34 +146,42 @@ export async function testConfigurations(): Promise<string[]> {
       let status = "";
       try {
         const content = fs.readFileSync(p, "utf8");
-        const config = JSON.parse(content);
-        
-        let mcpDef = null;
-        if (opt.value === "opencode") {
-          mcpDef = config?.mcp?.["web-mcp"];
-        } else {
-          mcpDef = config?.mcpServers?.["web-mcp"];
-        }
-        
-        if (!mcpDef) {
-          status = "\x1b[33mFile exists, but web-mcp not added\x1b[0m";
-        } else {
-          const cmd = mcpDef.command;
-          const isCommandValid = (opt.value === "opencode" && Array.isArray(cmd) && (cmd.includes("npx") || cmd.includes("web-mcp"))) ||
-                                 (cmd === "npx" || cmd === "web-mcp");
-          if (isCommandValid) {
-            status = "\x1b[32mWorking [✓]\x1b[0m";
-            anyFound = true;
+        if (opt.value === "openai-codex") {
+          if (content.includes("[mcp_servers.web-mcp]")) {
+             status = "\x1b[32mWorking [✓]\x1b[0m";
+             anyFound = true;
           } else {
-            status = "\x1b[31mBroken (Invalid command syntax)\x1b[0m";
+             status = "\x1b[33mFile exists, but web-mcp not added\x1b[0m";
+          }
+        } else {
+          const config = JSON.parse(content);
+          
+          let mcpDef = null;
+          if (opt.value === "zed") {
+            mcpDef = config?.context_servers?.["web-mcp"];
+          } else {
+            mcpDef = config?.mcpServers?.["web-mcp"];
+          }
+          
+          if (!mcpDef) {
+            status = "\x1b[33mFile exists, but web-mcp not added\x1b[0m";
+          } else {
+            const cmd = mcpDef.command;
+            const isCommandValid = cmd === "npx" || cmd === "web-mcp";
+            if (isCommandValid) {
+              status = "\x1b[32mWorking [\u2713]\x1b[0m";
+              anyFound = true;
+            } else {
+              status = "\x1b[31mBroken (Invalid command syntax)\x1b[0m";
+            }
           }
         }
       } catch (e) {
         status = "\x1b[31mBroken (Invalid JSON format)\x1b[0m";
       }
-      lines.push(`${opt.label.padEnd(20)} : ${status}`);
+      lines.push(`${opt.label.padEnd(25)} : ${status}`);
     } else {
-      lines.push(`${opt.label.padEnd(20)} : \x1b[90mNot Installed / No Config File\x1b[0m`);
+      lines.push(`${opt.label.padEnd(25)} : \x1b[90mNot Installed / No Config File\x1b[0m`);
     }
   }
   
@@ -149,7 +199,7 @@ export async function uninstallClient(choiceValue: string): Promise<string[]> {
   lines.push("\x1b[90m=========================\x1b[0m");
 
   const clientsToRemove = choiceValue === "all" 
-    ? SETUP_OPTIONS.map(o => o.value).filter(v => v !== "manual" && v !== "cancel") 
+    ? SETUP_OPTIONS.map(o => o.value).filter(v => v !== "manual" && v !== "cancel" && v !== "chatgpt") 
     : [choiceValue];
 
   let removedCount = 0;
@@ -160,30 +210,46 @@ export async function uninstallClient(choiceValue: string): Promise<string[]> {
 
     try {
       const content = fs.readFileSync(p, "utf8");
-      const config = JSON.parse(content);
-      let modified = false;
+      
+      if (client === "openai-codex") {
+        if (content.includes("[mcp_servers.web-mcp]")) {
+          const newContent = content.replace(/\[mcp_servers\.web-mcp\][\s\S]*?(?=\n\[|$)/g, "").trim() + "\n";
+          const tempP = p + ".tmp." + Date.now();
+          fs.writeFileSync(tempP, newContent);
+          fs.renameSync(tempP, p);
+          lines.push(`\x1b[32m✓ Removed from ${client}\x1b[0m`);
+          removedCount++;
+        }
+      } else {
+        const config = JSON.parse(content);
+        let modified = false;
 
-      if (client === "opencode") {
-        if (config?.mcp?.["web-mcp"]) {
-          delete config.mcp["web-mcp"];
+        if (client === "opencode") {
+          if (config?.mcp?.["web-mcp"]) {
+            delete config.mcp["web-mcp"];
+            modified = true;
+          }
+          if (config?.mcpServers?.["web-mcp"]) {
+            delete config.mcpServers["web-mcp"];
+            modified = true;
+          }
+        } else if (client === "zed") {
+          if (config?.context_servers?.["web-mcp"]) {
+            delete config.context_servers["web-mcp"];
+            modified = true;
+          }
+        } else if (config?.mcpServers?.["web-mcp"]) {
+          delete config.mcpServers["web-mcp"];
           modified = true;
         }
-        // Fix strict validation crash caused by previous buggy setups
-        if (config.hasOwnProperty("mcpServers")) {
-          delete config.mcpServers;
-          modified = true;
-        }
-      } else if (config?.mcpServers?.["web-mcp"]) {
-        delete config.mcpServers["web-mcp"];
-        modified = true;
-      }
 
-      if (modified) {
-        const tempP = p + ".tmp." + Date.now();
-        fs.writeFileSync(tempP, JSON.stringify(config, null, 2));
-        fs.renameSync(tempP, p);
-        lines.push(`\x1b[32m✓ Removed from ${client}\x1b[0m`);
-        removedCount++;
+        if (modified) {
+          const tempP = p + ".tmp." + Date.now();
+          fs.writeFileSync(tempP, JSON.stringify(config, null, 2));
+          fs.renameSync(tempP, p);
+          lines.push(`\x1b[32m✓ Removed from ${client}\x1b[0m`);
+          removedCount++;
+        }
       }
     } catch (e) {
       lines.push(`\x1b[31m✗ Failed to process ${client}\x1b[0m`);
@@ -197,7 +263,6 @@ export async function uninstallClient(choiceValue: string): Promise<string[]> {
     lines.push("\x1b[32mClient uninstall complete.\x1b[0m");
   }
 
-  // If uninstalling from ALL clients, also wipe out the local Web MCP app data (profiles, logs, etc)
   if (choiceValue === "all") {
     try {
       if (fs.existsSync(CONFIG_DIR)) {
@@ -232,14 +297,80 @@ export async function configureClient(choiceValue: string): Promise<string[]> {
     lines.push("\x1b[1mManual Setup Instructions\x1b[0m");
     lines.push("Add the following to your MCP settings file:");
     lines.push("");
-    lines.push(`{
-  "mcpServers": {
-    "web-mcp": {
-      "command": "web-mcp",
-      "args": ["mcp"]
+    lines.push(`{`);
+    lines.push(`  "mcpServers": {`);
+    lines.push(`    "web-mcp": {`);
+    lines.push(`      "command": "web-mcp",`);
+    lines.push(`      "args": ["mcp"]`);
+    lines.push(`    }`);
+    lines.push(`  }`);
+    lines.push(`}`);
+    return lines;
+  } else if (choiceValue === "chatgpt") {
+    lines.push("\x1b[1mChatGPT Desktop MCP Setup\x1b[0m");
+    lines.push("Unlike other clients, ChatGPT does not use a local config file.");
+    lines.push("However, you can connect Web MCP using a local bridge proxy.");
+    lines.push("");
+    lines.push("1. Open the ChatGPT Desktop App");
+    lines.push("2. Go to Settings -> Connectors or Apps");
+    lines.push("3. Enter the URL of your local MCP proxy or ngrok tunnel.");
+    return lines;
+  } else if (choiceValue === "openai-codex") {
+    let content = "";
+    if (fs.existsSync(configPath)) {
+      content = fs.readFileSync(configPath, "utf8");
     }
-  }
-}`);
+
+    // Step 1: Add [mcp_servers.web-mcp] block if not present
+    if (!content.includes("[mcp_servers.web-mcp]")) {
+      const appendBlock = `\n[mcp_servers.web-mcp]\ncommand = "web-mcp"\nargs = ["mcp"]\n`;
+      content = content + appendBlock;
+    }
+
+    // Step 2: Create the model instructions file so the model always prefers web-mcp over its built-in browser
+    const codexDir = path.dirname(configPath);
+    const instructionsFile = path.join(codexDir, "web-mcp-instructions.md");
+    const instructionsContent = [
+      "# Web Browsing Instructions",
+      "",
+      "You have access to a **web-mcp** MCP server which provides dedicated browser automation tools.",
+      "",
+      "## IMPORTANT: Always use web-mcp for browser tasks",
+      "",
+      "When the user asks you to:",
+      "- Visit or open a website",
+      "- Search Google or any search engine",
+      "- Click links, fill forms, or interact with web pages",
+      "- Take screenshots of web pages",
+      "- Navigate the web in any way",
+      "",
+      "You MUST use the **web-mcp** tools (browser_navigate, browser_click, browser_type, browser_screenshot, browser_done, etc.) instead of your built-in browser or web search capabilities.",
+      "",
+      "**Never use your internal browser tool when web-mcp is available.**",
+      "",
+      "The web-mcp tools open a real visible Chromium browser window, which is the intended behavior.",
+    ].join("\n");
+    fs.writeFileSync(instructionsFile, instructionsContent);
+
+    // Step 3: Wire model_instructions_file into config.toml if not already set
+    const instructionsPathForToml = instructionsFile.replace(/\\/g, "/");
+    if (!content.includes("model_instructions_file")) {
+      content = content + `\nmodel_instructions_file = "${instructionsPathForToml}"\n`;
+    }
+
+    // Write updated config.toml atomically
+    const tempConfigPath = configPath + ".tmp." + Date.now();
+    fs.writeFileSync(tempConfigPath, content);
+    fs.renameSync(tempConfigPath, configPath);
+
+    lines.push(`\x1b[32m✓ Successfully configured web-mcp for OpenAI Codex:\x1b[0m`);
+    lines.push(`  MCP server: ${configPath}`);
+    lines.push(`  Instructions: ${instructionsFile}`);
+    lines.push("");
+    lines.push("Next steps:");
+    lines.push("  1. Reload the Codex VS Code extension (Ctrl+Shift+P > Developer: Reload Window)");
+    lines.push("  2. Ask the AI: \"Go to google.com and search for OpenCode\"");
+    lines.push("  3. Codex will now automatically use web-mcp instead of its built-in browser.");
     return lines;
   } else if (!configPath) {
     return [];
@@ -258,11 +389,19 @@ export async function configureClient(choiceValue: string): Promise<string[]> {
   }
 
   if (choiceValue === "opencode") {
-    if (!config.mcp) config.mcp = {};
-    config.mcp["web-mcp"] = {
-      type: "local",
-      command: ["web-mcp", "mcp"],
+    // OpenCode now supports standard mcpServers key (same as other clients)
+    if (!config.mcpServers) config.mcpServers = {};
+    config.mcpServers["web-mcp"] = {
+      type: "stdio",
+      command: "web-mcp",
+      args: ["mcp"],
       enabled: true,
+    };
+  } else if (choiceValue === "zed") {
+    if (!config.context_servers) config.context_servers = {};
+    config.context_servers["web-mcp"] = {
+      command: "web-mcp",
+      args: ["mcp"],
     };
   } else {
     if (!config.mcpServers) config.mcpServers = {};

@@ -76,9 +76,9 @@
         console.log("  web-mcp about    About Web MCP");
         console.log("");
         if (command === "about") {
-          console.log("Web MCP is an advanced browser automation tool designed for AI assistants.");
+          console.log("Web MCP is a dedicated browser automation layer designed for AI assistants.");
           console.log("It uses a local server and a dedicated Chrome extension to provide a");
-          console.log("collision-free, visually stunning browser automation experience.");
+          console.log("collision-free, transparent browser automation experience.");
           console.log("");
         }
     }
