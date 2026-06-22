@@ -1,17 +1,28 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { getConfiguredClients, SETUP_OPTIONS } from "./setup.js";
 
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
-const SERVER_PORT = 3026;
-const CHROME_PORT = 9222;
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
-export async function run(): Promise<void> {
-  console.log("");
-  console.log("BrowserPilot Status");
-  console.log("===================");
-  console.log("");
+let SERVER_PORT = 3026;
+let CHROME_PORT = 9222;
+
+if (fs.existsSync(CONFIG_FILE)) {
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    if (config?.server?.port) SERVER_PORT = config.server.port;
+    if (config?.chrome?.port) CHROME_PORT = config.chrome.port;
+  } catch {}
+}
+
+export async function getStatus(): Promise<string[]> {
+  const lines: string[] = [];
+  
+  lines.push("\x1b[1mWeb MCP Status\x1b[0m");
+  lines.push("\x1b[90m===================\x1b[0m");
 
   // Check server
   let serverRunning = false;
@@ -19,62 +30,47 @@ export async function run(): Promise<void> {
     const pid = parseInt(fs.readFileSync(PID_FILE, "utf8").trim(), 10);
     if (!isNaN(pid)) {
       try {
-        process.kill(pid, 0); // Check if process exists
+        process.kill(pid, 0);
         serverRunning = true;
-        console.log("Server:  Running (PID: " + pid + ")");
+        lines.push("Server:  Running (PID: " + pid + ")");
       } catch {
-        console.log("Server:  Not running (stale PID file)");
+        lines.push("Server:  Not running (stale PID file)");
       }
     }
   }
   if (!serverRunning) {
-    console.log("Server:  Not running");
+    lines.push("Server:  Not running");
   }
 
   // Check server health
   try {
-    const resp = await fetch("http://localhost:" + SERVER_PORT + "/.identity", { signal: AbortSignal.timeout(3000) });
+    const resp = await fetch("http://localhost:" + SERVER_PORT + "/.identity", { signal: AbortSignal.timeout(1000) });
     const data = await resp.json() as any;
-    console.log("         Health: " + (data.identity === "browser-pilot-server" ? "Healthy" : "Unknown"));
+    lines.push("         Health: " + (data.identity === "web-mcp-server" ? "\x1b[32mHealthy\x1b[0m" : "\x1b[33mUnknown\x1b[0m"));
   } catch {
-    console.log("         Health: Not responding");
+    lines.push("         Health: \x1b[31mNot responding\x1b[0m");
   }
 
-  // Check Chrome
+  // Check Chromium
   try {
-    const resp = await fetch("http://127.0.0.1:" + CHROME_PORT + "/json/version", { signal: AbortSignal.timeout(3000) });
+    const resp = await fetch("http://127.0.0.1:" + CHROME_PORT + "/json/version", { signal: AbortSignal.timeout(1000) });
     const data = await resp.json() as any;
-    console.log("Chrome:  Running (port " + CHROME_PORT + ")");
-    console.log("         Browser: " + (data.browser || "Unknown"));
+    lines.push("Chromium:  Running (port " + CHROME_PORT + ")");
+    lines.push("         Browser: " + (data.browser || "Unknown"));
   } catch {
-    console.log("Chrome:  Not running");
+    lines.push("Chromium:  Not running");
   }
 
   // Check config
-  const configFile = path.join(CONFIG_DIR, "config.json");
-  console.log("Config:  " + (fs.existsSync(configFile) ? configFile : "Not found"));
+  lines.push("Config:  " + (fs.existsSync(CONFIG_FILE) ? CONFIG_FILE : "Not found"));
 
-  // Check OpenCode config
-  const possiblePaths = [
-    path.join(os.homedir(), ".config", "opencode", "opencode.json"),
-    path.join(os.homedir(), ".opencode", "opencode.json"),
-  ];
-  let opencodeConfigured = false;
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      try {
-        const config = JSON.parse(fs.readFileSync(p, "utf8"));
-        if (config.mcp && config.mcp["browser-pilot"]) {
-          opencodeConfigured = true;
-          console.log("OpenCode: Configured ✓");
-          break;
-        }
-      } catch {}
-    }
-  }
-  if (!opencodeConfigured) {
-    console.log("OpenCode: Not configured (run: browser-pilot setup)");
+  // Check Configured Clients
+  const configured = getConfiguredClients();
+  if (configured.length > 0) {
+    lines.push("Clients: " + configured.map(c => SETUP_OPTIONS.find(o => o.value === c)?.label || c).join(", "));
+  } else {
+    lines.push("Clients: Not configured (run: web-mcp setup)");
   }
 
-  console.log("");
+  return lines;
 }

@@ -1,11 +1,11 @@
 {
-  "name": "browser-pilot",
-  "version": "1.0.0",
-  "description": "AI browser automation sidebar with real-time activity feed",
+  "name": "@amitnarw/web-mcp",
+  "version": "0.1.4",
+  "description": "Dedicated browser automation MCP server using an isolated Chromium profile and Extension to provide AI browser control. Fully supports OpenCode, Cursor, Claude Code, Zed Editor, Sourcegraph Cody, Windsurf, Roo Code, and OpenAI Codex.",
   "type": "module",
   "main": "dist/mcp/wrapper.min.js",
   "bin": {
-    "browser-pilot": "./bin/browser-pilot.js"
+    "web-mcp": "./bin/web-mcp.js"
   },
   "files": [
     "dist/",
@@ -17,15 +17,22 @@
     "build": "tsc",
     "bundle": "node scripts/bundle.mjs",
     "prepublishOnly": "npm run build && npm run bundle",
-    "setup": "node bin/browser-pilot.js setup",
-    "stop": "node bin/browser-pilot.js stop",
-    "status": "node bin/browser-pilot.js status"
+    "postinstall": "node bin/postinstall.js",
+    "setup": "node bin/web-mcp.js setup",
+    "stop": "node bin/web-mcp.js stop",
+    "status": "node bin/web-mcp.js status"
   },
   "dependencies": {
+    "@fontsource/geist-sans": "^5.2.5",
+    "@fontsource/inter": "^5.2.8",
+    "@inquirer/prompts": "^8.5.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sse": "^0.16.1",
     "chrome-devtools-mcp": "^1.0.0",
+    "chrome-remote-interface": "^0.34.0",
     "express": "^4.21.0",
+    "material-symbols": "^0.44.12",
+    "puppeteer": "^25.1.0",
     "ws": "^8.18.0",
     "zod": "^3.23.0"
   },
@@ -34,6 +41,7 @@
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
     "esbuild": "^0.28.0",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.7.0"
   },
   "engines": {

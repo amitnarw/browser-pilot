@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const LOGS_DIR = path.join(CONFIG_DIR, "logs");
 const LOG_FILE = path.join(LOGS_DIR, "server.log");
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB

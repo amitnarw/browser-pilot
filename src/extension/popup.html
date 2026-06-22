@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Web MCP</title>
+  <link href="fonts/inter.css" rel="stylesheet" />
+  <link href="fonts/geist.css" rel="stylesheet" />
+  <link href="fonts/outlined.css" rel="stylesheet" />
+  <link href="tailwind.css" rel="stylesheet" />
+  <style>
+    @keyframes neon-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    @keyframes mesh-flow { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+    .bp-premium-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+    .bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: mesh-flow 4s ease-in-out infinite; border: none; }
+    .bp-orb-eyes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 3px; z-index: 2; transition: transform 0.1s ease-out; transform: translate(var(--eye-x, 0px), var(--eye-y, 0px)); }
+    .bp-orb-eye { width: 4px; height: 4px; background: #adc6ff; border-radius: 50%; animation: orb-blink 4s infinite; box-shadow: 0 0 4px rgba(173,198,255,0.5); }
+    @keyframes orb-blink { 0%, 96%, 98% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+    
+    @keyframes slide-up-fade {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-slide-up {
+      opacity: 0;
+      animation: slide-up-fade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Guaranteed Custom UI Styling to replace uncompiled Tailwind */
+    .popup-body { background-color: #09090b; color: #e4e2e4; overflow-x: hidden; display: flex; flex-direction: column; width: 320px; min-height: 280px; padding: 24px; position: relative; }
+    .ambient-glow { position: absolute; top: -80px; right: -80px; width: 256px; height: 256px; background-color: rgba(173, 198, 255, 0.15); border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; }
+    .popup-content-wrapper { position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%; gap: 32px; }
+    .status-text { font-family: monospace; font-size: 10px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.1em; }
+    .directive-label { font-size: 9px; color: #adc6ff; text-transform: uppercase; letter-spacing: 0.2em; font-weight: bold; opacity: 0.8; }
+    .task-text { font-size: 16px; color: rgba(255, 255, 255, 0.9); font-weight: 500; line-height: 1.3; letter-spacing: -0.02em; }
+    .primary-pill-btn { width: 100%; border-radius: 9999px; background: linear-gradient(to bottom, #007aff, #005bc1); color: white; padding: 12px 16px; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 24px rgba(0, 122, 255, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4); cursor: pointer; transition: all 0.3s ease; }
+    .primary-pill-btn:hover { background: linear-gradient(to bottom, #4b8eff, #007aff); box-shadow: 0 12px 32px rgba(0, 122, 255, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.5); transform: translateY(-2px); }
+    .primary-pill-btn:active { transform: scale(0.97); }
+    .ghost-pill-btn { width: 100%; background: transparent; color: rgba(228, 226, 228, 0.7); border-radius: 9999px; padding: 8px 16px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; border: none; }
+    .ghost-pill-btn:hover { background: rgba(255, 255, 255, 0.05); color: white; }
+    .ghost-pill-btn:active { transform: scale(0.98); }
+    .footer-text { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: color 0.2s ease; }
+    .debug-box { max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 9px; line-height: 1.5; color: #c1c6d7; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(12px); padding: 16px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5); }
+    
+    .bp-dialog-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px); animation: bp-fade-in-fast 0.2s ease-out; }
+    @keyframes bp-fade-in-fast { from { opacity: 0; } to { opacity: 1; } }
+    .bp-dialog { background: #131315; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); padding: 24px; width: 280px; display: flex; flex-direction: column; gap: 12px; transform: scale(0.95); animation: bp-pop-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+    @keyframes bp-pop-in { to { transform: scale(1); } }
+    .bp-dialog-title { font-size: 16px; font-weight: 600; color: #adc6ff; margin: 0; display: flex; align-items: center; gap: 8px; }
+    .bp-dialog-desc { font-size: 13px; color: #c1c6d7; margin: 0; line-height: 1.5; }
+    .bp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .bp-dialog-btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; }
+    .bp-dialog-btn-cancel { background: rgba(255,255,255,0.1); color: #c1c6d7; }
+    .bp-dialog-btn-cancel:hover { background: rgba(255,255,255,0.15); color: #e4e2e4; }
+    .bp-dialog-btn-stop { background: rgba(147,0,10,0.3); color: #ffb4ab; }
+    .bp-dialog-btn-stop:hover { background: rgba(147,0,10,0.4); }
+  </style>
+</head>
+<body class="popup-body font-body-lg">
+  
+  <!-- Ambient Deep Space Glow -->
+  <div class="ambient-glow"></div>
+
+  <!-- Main Content Wrapper -->
+  <div class="popup-content-wrapper">
+    
+    <!-- Top Header & Status -->
+    <div class="flex justify-between items-start w-full animate-slide-up" style="animation-delay: 0s;">
+      <!-- Logo + Orb Group -->
+      <div class="flex items-center gap-3">
+        <div class="bp-premium-wrapper" style="transform: scale(1.1); width: 24px; height: 24px;">
+          <div class="bp-premium-orb">
+            <div class="bp-orb-eyes"><div class="bp-orb-eye"></div><div class="bp-orb-eye"></div></div>
+          </div>
+        </div>
+        <div class="font-bold uppercase text-white/50" style="font-size: 10px; letter-spacing: 0.3em;">Web MCP</div>
+      </div>
+      
+      <!-- Integrated Status Indicator -->
+      <div class="flex items-center gap-2 mt-1">
+        <span id="status-text" class="status-text">Checking</span>
+        <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-error shadow-[0_0_8px_rgba(255,100,100,0.5)]"></span>
+      </div>
+    </div>
+
+    <!-- Central Focus: Active Directive -->
+    <div class="flex flex-col gap-2 animate-slide-up" style="animation-delay: 0.1s;">
+      <span class="directive-label font-label-md">Active Directive</span>
+      <div id="task-display" class="task-text font-body-sm">Awaiting instructions...</div>
+    </div>
+
+    <!-- Action Pill Button -->
+    <div class="flex flex-col gap-3 mt-auto animate-slide-up" style="animation-delay: 0.2s;">
+      <button id="open-sidebar" class="primary-pill-btn font-label-md">
+        <span class="material-symbols-outlined" style="font-size: 18px;" data-icon="dock_to_right">dock_to_right</span>
+        Open Sidebar
+      </button>
+      
+      <!-- Ghost Secondary Button -->
+      <button id="take-control" class="ghost-pill-btn font-label-md" style="display: none;">
+        Halt Action
+      </button>
+    </div>
+
+    <!-- Sleek Footer -->
+    <div class="flex justify-between items-center animate-slide-up" style="animation-delay: 0.3s; margin-top: -4px;">
+      <div id="debug-toggle" class="footer-text font-label-md text-primary/50 hover:text-primary">Debug Logs</div>
+      <div id="version-display" class="footer-text font-label-md text-on-surface-variant/30">V1.0.0</div>
+    </div>
+    
+    <!-- Hidden Debug Panel -->
+    <div id="debug-section" class="hidden flex-col gap-2 mt-2 animate-slide-up" style="animation-delay: 0s;">
+      <div id="debug-panel" class="debug-box custom-scrollbar font-mono-code"></div>
+    </div>
+    
+  </div>
+
+  <script src="env.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

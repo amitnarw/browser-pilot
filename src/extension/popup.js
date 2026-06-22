@@ -1,0 +1,193 @@
+(function() {
+  "use strict";
+
+  var port = globalThis.WEB_MCP_PORT || 3026;
+  var SERVER_URL = "http://localhost:" + port;
+  var statusDot = document.getElementById("status-dot");
+  var statusText = document.getElementById("status-text");
+  var taskDisplay = document.getElementById("task-display");
+  var versionDisplay = document.getElementById("version-display");
+  var openSidebarBtn = document.getElementById("open-sidebar");
+  var debugToggle = document.getElementById("debug-toggle");
+  var debugPanel = document.getElementById("debug-panel");
+  var debugVisible = false;
+  var debugPollTimer = null;
+
+  function updateUI(data) {
+    if (data.connected) {
+      statusDot.className = "status-dot connected";
+      statusText.textContent = "Connected";
+    } else {
+      statusDot.className = "status-dot disconnected";
+      statusText.textContent = "Disconnected";
+    }
+
+    if (data.task) {
+      taskDisplay.textContent = data.task;
+      taskDisplay.className = "task-name";
+    } else {
+      taskDisplay.textContent = data.sidebarActive ? "Sidebar active" : "No active task";
+      taskDisplay.className = data.sidebarActive ? "task-name" : "task-name no-task";
+    }
+
+    if (data.version) {
+      versionDisplay.textContent = "v" + data.version;
+    }
+
+    var takeControlBtn = document.getElementById("take-control");
+    if (takeControlBtn) {
+      takeControlBtn.style.display = data.sidebarActive ? "block" : "none";
+    }
+  }
+
+  // Get status from server directly (not via service worker)
+  function fetchStatus() {
+    fetch(SERVER_URL + "/status")
+      .then(function(resp) { return resp.json(); })
+      .then(function(data) {
+        updateUI({
+          connected: true,
+          sidebarActive: data.sidebarActive || false,
+          task: data.currentTask || null,
+          sessionState: data.sessionState || "idle",
+          version: "1.0.0"
+        });
+      })
+      .catch(function() {
+        updateUI({ connected: false, sidebarActive: false, task: null, version: "1.0.0" });
+      });
+  }
+
+  // Fetch debug logs from server
+  function fetchLogs() {
+    fetch(SERVER_URL + "/logs")
+      .then(function(resp) { return resp.json(); })
+      .then(function(data) {
+        renderLogs(data.logs || []);
+      })
+      .catch(function(err) {
+        debugPanel.innerHTML = '<div style="color:#ef4444;">Error: ' + err.message + '</div>';
+      });
+  }
+
+  // Fetch full debug info
+  function fetchDebug() {
+    fetch(SERVER_URL + "/debug")
+      .then(function(resp) { return resp.json(); })
+      .then(function(data) {
+        var html = '';
+        html += '<div class="log-entry"><span class="log-msg" style="color:#58a6ff;">=== SERVER STATE ===</span></div>';
+        html += '<div class="log-entry"><span class="log-msg">SSE clients: ' + data.sseClients + '</span></div>';
+        html += '<div class="log-entry"><span class="log-msg">Session: ' + JSON.stringify(data.session) + '</span></div>';
+        html += '<div class="log-entry"><span class="log-msg">Sidebar: active=' + data.sidebar.active + ' task=' + (data.sidebar.taskName || 'none') + '</span></div>';
+        html += '<div class="log-entry"><span class="log-msg" style="color:#58a6ff;">=== RECENT LOGS ===</span></div>';
+        html += renderLogsHtml(data.recentLogs || []);
+        debugPanel.innerHTML = html;
+      })
+      .catch(function(err) {
+        debugPanel.innerHTML = '<div style="color:#ef4444;">Error: ' + err.message + '</div>';
+      });
+  }
+
+  function renderLogs(logs) {
+    debugPanel.innerHTML = renderLogsHtml(logs);
+  }
+
+  function renderLogsHtml(logs) {
+    var html = '';
+    for (var i = logs.length - 1; i >= 0; i--) {
+      var log = logs[i];
+      var time = new Date(log.timestamp).toLocaleTimeString();
+      html += '<div class="log-entry"><span class="log-time">' + time + '</span> <span class="log-msg">' + escapeHtml(log.message) + '</span></div>';
+    }
+    return html;
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Toggle debug panel
+  debugToggle.addEventListener("click", function() {
+    debugVisible = !debugVisible;
+    if (debugVisible) {
+      debugPanel.classList.add("visible");
+      debugToggle.textContent = "Hide Debug Logs";
+      fetchDebug();
+      // Poll logs every 2 seconds while visible
+      debugPollTimer = setInterval(fetchDebug, 2000);
+    } else {
+      debugPanel.classList.remove("visible");
+      debugToggle.textContent = "Show Debug Logs";
+      if (debugPollTimer) {
+        clearInterval(debugPollTimer);
+        debugPollTimer = null;
+      }
+    }
+  });
+
+  // Initial status fetch
+  fetchStatus();
+
+  // Open sidebar button
+  openSidebarBtn.addEventListener("click", function() {
+    chrome.runtime.sendMessage({ type: "OPEN_SIDEBAR" }, function(response) {
+      if (response && response.success) {
+        window.close();
+      }
+    });
+  });
+
+  // Take control button
+  var takeControlBtn = document.getElementById("take-control");
+  takeControlBtn.addEventListener("click", function() {
+    var dOverlay = document.createElement('div');
+    dOverlay.className = 'bp-dialog-overlay';
+    dOverlay.addEventListener('click', function(e) {
+      if(e.target === dOverlay) dOverlay.remove();
+    });
+
+    var dialog = document.createElement('div');
+    dialog.className = 'bp-dialog';
+    
+    var title = document.createElement('h3');
+    title.className = 'bp-dialog-title';
+    title.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> Halt AI Session?';
+    
+    var desc = document.createElement('p');
+    desc.className = 'bp-dialog-desc';
+    desc.innerText = 'This will end the current task and return control to you.';
+    
+    var actions = document.createElement('div');
+    actions.className = 'bp-dialog-actions';
+    
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'bp-dialog-btn bp-dialog-btn-cancel';
+    cancelBtn.innerText = 'Cancel';
+    cancelBtn.addEventListener('click', function() { dOverlay.remove(); });
+    
+    var stopBtn = document.createElement('button');
+    stopBtn.className = 'bp-dialog-btn bp-dialog-btn-stop';
+    stopBtn.innerText = 'Halt Action';
+    stopBtn.addEventListener('click', function() { 
+      dOverlay.remove();
+      chrome.runtime.sendMessage({ type: "STOP_BROWSER" }, function(response) {
+        if (response && response.success) {
+          window.close();
+        }
+      });
+    });
+    
+    actions.appendChild(cancelBtn);
+    actions.appendChild(stopBtn);
+    
+    dialog.appendChild(title);
+    dialog.appendChild(desc);
+    dialog.appendChild(actions);
+    
+    dOverlay.appendChild(dialog);
+    document.body.appendChild(dOverlay);
+  });
+})();

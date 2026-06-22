@@ -3,11 +3,26 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { fileURLToPath } from "url";
 import { logToFile } from "./logger.js";
 
-const HTTP_PORT = 3026;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const VERSION = "1.0.0";
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+
+let HTTP_PORT = 3026;
+if (fs.existsSync(CONFIG_FILE)) {
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    if (config?.server?.port) {
+      HTTP_PORT = config.server.port;
+    }
+  } catch {}
+}
+
 const RECORDINGS_DIR = path.join(CONFIG_DIR, "recordings");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
 
@@ -53,6 +68,7 @@ let sessionId: string | null = null;
 let sessionDir: string | null = null;
 let sessionData: SessionData | null = null;
 let commandCounter = 0;
+let lastUserHaltTime = 0;
 
 // ─── Log Buffer ──────────────────────────────────────────────────────────
 
@@ -85,12 +101,14 @@ let sessionState: SessionState = {
 const sseClients: Set<Response> = new Set();
 
 function broadcastState(): void {
+  const lastAction = sidebarState.actions[sidebarState.actions.length - 1];
   const payload = JSON.stringify({
     lockOwner: sessionState.lockOwner,
     active: sidebarState.active,
     taskName: sidebarState.taskName,
     actions: sidebarState.actions.slice(-10),
     sessionStatus: sessionState.status,
+    lastActionType: lastAction ? lastAction.type : null,
   });
   for (const client of sseClients) {
     try {
@@ -197,7 +215,19 @@ app.use((_req: Request, res: Response, next) => {
 });
 
 app.get("/.identity", (_req: Request, res: Response) => {
-  res.json({ identity: "browser-pilot-server", version: VERSION });
+  res.json({ identity: "web-mcp-server", version: VERSION });
+});
+
+// Serve extension files statically for the preview route
+app.use("/extension", express.static(path.join(__dirname, "../../extension")));
+
+// Preview Sandbox Route
+app.get("/preview", (_req: Request, res: Response) => {
+  res.sendFile(path.join(__dirname, "../../extension/preview.html"));
+});
+
+app.get("/ping", (_req: Request, res: Response) => {
+  res.json({ status: "ok", identity: "web-mcp-server" });
 });
 
 app.get("/status", (_req: Request, res: Response) => {
@@ -208,6 +238,7 @@ app.get("/status", (_req: Request, res: Response) => {
     sessionId,
     hasActiveSession: sessionData !== null,
     sessionState: sessionState.status,
+    lastUserHaltTime,
   });
 });
 
@@ -242,7 +273,12 @@ app.post("/session/start", (req: Request, res: Response) => {
   broadcastState();
 });
 
-app.post("/session/stop", (_req: Request, res: Response) => {
+app.post("/session/stop", (req: Request, res: Response) => {
+  const { haltedByUser } = req.body as { haltedByUser?: boolean };
+  if (haltedByUser) {
+    lastUserHaltTime = Date.now();
+  }
+
   sessionState = {
     status: "idle",
     taskName: null,
@@ -348,10 +384,12 @@ app.post("/sidebar/action", (req: Request, res: Response) => {
 });
 
 app.get("/sidebar/state", (_req: Request, res: Response) => {
+  const lastAction = sidebarState.actions[sidebarState.actions.length - 1];
   res.json({
     ...sidebarState,
     lockOwner: sessionState.lockOwner,
     sessionStatus: sessionState.status,
+    lastActionType: lastAction ? lastAction.type : null,
   });
 });
 

@@ -1,300 +1,125 @@
-﻿<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html class="dark h-full w-full overflow-hidden" lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BrowserPilot</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Web MCP</title>
+<link href="fonts/inter.css" rel="stylesheet" />
+<link href="fonts/geist.css" rel="stylesheet" />
+<link href="fonts/outlined.css" rel="stylesheet" />
+<link href="tailwind.css" rel="stylesheet" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: linear-gradient(180deg, #080f1e 0%, #050c19 100%);
-      color: #e2e8f0;
-      min-height: 100vh;
-      overflow-y: auto;
-    }
-    .header {
-      padding: 20px;
-      border-bottom: 1px solid rgba(56,189,248,0.1);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      position: sticky;
-      top: 0;
-      background: rgba(8,15,30,0.95);
-      backdrop-filter: blur(16px);
-      z-index: 10;
-    }
-    .logo {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, #38bdf8, #6366f1);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
-      color: white;
-      box-shadow: 0 2px 8px rgba(56,189,248,0.3);
-    }
-    .header-text { flex: 1; }
-    .title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #e2e8f0;
-      letter-spacing: -0.01em;
-    }
-    .subtitle {
-      font-size: 11px;
-      color: #64748b;
-      margin-top: 2px;
-    }
-    .spinner-wrap {
-      position: relative;
-      width: 20px;
-      height: 20px;
-    }
-    @keyframes spinOuter { to { transform: rotate(360deg); } }
-    @keyframes spinInner { to { transform: rotate(-360deg); } }
-    .spinner-outer {
-      position: absolute;
-      top: 0; left: 0;
-      width: 20px; height: 20px;
-      border: 1.5px solid rgba(56,189,248,0.1);
-      border-top-color: #38bdf8;
-      border-radius: 50%;
-      animation: spinOuter 1.4s linear infinite;
-    }
-    .spinner-inner {
-      position: absolute;
-      top: 4px; left: 4px;
-      width: 12px; height: 12px;
-      border: 1.5px solid rgba(6,182,212,0.1);
-      border-bottom-color: #06b6d4;
-      border-radius: 50%;
-      animation: spinInner 1s linear infinite;
-    }
-    .status-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 12px;
-      background: rgba(56,189,248,0.06);
-      border: 1px solid rgba(56,189,248,0.12);
-      border-radius: 8px;
-      margin: 16px 20px;
-    }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      background: #22d3ee;
-      border-radius: 50%;
-      animation: pulse 1.5s ease-in-out infinite;
-      box-shadow: 0 0 6px rgba(34,211,238,0.5);
-    }
-    .status-text {
-      font-size: 11px;
-      font-weight: 500;
-      color: #38bdf8;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .lock-banner {
-      display: none;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
-      background: rgba(239, 68, 68, 0.08);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      border-radius: 8px;
-      margin: 0 20px 12px;
-    }
-    .lock-banner.visible { display: flex; }
-    .lock-icon { font-size: 14px; }
-    .lock-text {
-      font-size: 11px;
-      font-weight: 500;
-      color: #fca5a5;
-      letter-spacing: 0.02em;
-    }
-    .task {
-      padding: 0 20px 16px;
-      font-size: 13px;
-      color: #94a3b8;
-      line-height: 1.5;
-    }
-    .divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(56,189,248,0.15), transparent);
-      margin: 0 20px 16px;
-    }
-    .actions-label {
-      padding: 0 20px 12px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #64748b;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-    .actions {
-      padding: 0 20px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    @keyframes actionIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-    .action {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 10px 12px;
-      background: rgba(15,23,42,0.5);
-      border: 1px solid rgba(56,189,248,0.08);
-      border-radius: 10px;
-      animation: actionIn 0.3s ease-out;
-    }
-    .action-icon {
-      width: 20px;
-      height: 20px;
-      background: rgba(56,189,248,0.1);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-    .action-icon svg { width: 12px; height: 12px; }
-    .action-content { flex: 1; }
-    .action-text {
-      font-size: 12px;
-      color: #cbd5e1;
-      line-height: 1.4;
-    }
-    .action-time {
-      font-size: 10px;
-      color: #475569;
-      margin-top: 2px;
-    }
-    .idle-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 20px;
-      text-align: center;
-    }
-    .idle-icon {
-      width: 48px;
-      height: 48px;
-      background: rgba(56,189,248,0.08);
-      border-radius: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 16px;
-    }
-    .idle-icon svg { width: 24px; height: 24px; }
-    .idle-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #94a3b8;
-      margin-bottom: 8px;
-    }
-    .idle-text {
-      font-size: 12px;
-      color: #64748b;
-      line-height: 1.5;
-      max-width: 260px;
-    }
-    .footer {
-      padding: 16px 20px;
-      border-top: 1px solid rgba(56,189,248,0.1);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      position: sticky;
-      bottom: 0;
-      background: rgba(8,15,30,0.95);
-      backdrop-filter: blur(16px);
-    }
-    @keyframes dotWave { 0%,80%,100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
-    .footer-dots { display: flex; gap: 3px; }
-    .footer-dot {
-      width: 4px;
-      height: 4px;
-      background: #38bdf8;
-      border-radius: 50%;
-      animation: dotWave 1.4s ease-in-out infinite;
-    }
-    .footer-dot:nth-child(2) { animation-delay: 0.16s; }
-    .footer-dot:nth-child(3) { animation-delay: 0.32s; }
-    .footer-text {
-      font-size: 10px;
-      color: #475569;
-      letter-spacing: 0.04em;
-    }
+    @keyframes neon-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    @keyframes mesh-flow { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+    .bp-premium-wrapper { position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+    .bp-premium-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #131315; background-image: radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.6) 0px, transparent 70%), radial-gradient(circle at 100% 100%, rgba(173, 198, 255, 0.6) 0px, transparent 70%), linear-gradient(135deg, rgba(0, 91, 193, 0.4) 0%, rgba(0, 122, 255, 0.4) 100%); background-size: 200% 200%; animation: mesh-flow 4s ease-in-out infinite; border: none; }
+    .bp-orb-eyes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 3px; z-index: 2; transition: transform 0.1s ease-out; transform: translate(var(--eye-x, 0px), var(--eye-y, 0px)); }
+    .bp-orb-eye { width: 4px; height: 4px; background: #adc6ff; border-radius: 50%; animation: orb-blink 4s infinite; box-shadow: 0 0 4px rgba(173,198,255,0.5); }
+    @keyframes orb-blink { 0%, 96%, 98% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+    .bp-dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 2147483651; display: flex; align-items: center; justify-content: center; pointer-events: auto; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: bp-fade-in-fast 0.2s ease-out; font-family: 'Inter', sans-serif; }
+    @keyframes bp-fade-in-fast { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes bp-scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }
+    @keyframes dune-wind { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    .active-neon-card { background: linear-gradient(-45deg, #007aff, #005bc1, #00a2ff, #005bc1); background-size: 400% 400%; animation: dune-wind 15s ease infinite; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 24px rgba(0, 122, 255, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4); color: white; }
+    .bp-dialog { background: #131315; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); padding: 24px; width: 90%; max-width: 300px; display: flex; flex-direction: column; gap: 12px; transform: scale(0.95); animation: bp-pop-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+    @keyframes bp-pop-in { to { transform: scale(1); } }
+    .bp-dialog-title { font-size: 16px; font-weight: 600; color: #adc6ff; margin: 0; display: flex; align-items: center; gap: 8px; }
+    .bp-dialog-desc { font-size: 14px; color: #c1c6d7; margin: 0; line-height: 1.5; }
+    .bp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .bp-dialog-btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; }
+    .bp-dialog-btn-cancel { background: rgba(255,255,255,0.1); color: #c1c6d7; }
+    .bp-dialog-btn-cancel:hover { background: rgba(255,255,255,0.15); color: #e4e2e4; }
+    .bp-dialog-btn-stop { background: rgba(147,0,10,0.3); color: #ffb4ab; }
+    .bp-dialog-btn-stop:hover { background: rgba(147,0,10,0.4); }
   </style>
 </head>
-<body>
-  <div class="header">
-    <div class="logo">BP</div>
-    <div class="header-text">
-      <div class="title">BrowserPilot</div>
-      <div class="subtitle">AI agent active</div>
-    </div>
-    <div class="spinner-wrap" id="spinner" style="display:none">
-      <div class="spinner-outer"></div>
-      <div class="spinner-inner"></div>
-    </div>
-  </div>
+<body class="mesh-bg text-on-surface h-full w-full overflow-hidden flex flex-col font-body-lg m-0 p-0">
+  <header class="flex justify-between items-center px-inner-padding h-16 w-full sticky top-0 z-50 bg-surface/60 dark:bg-surface/60 backdrop-blur-[32px] border-b border-white/10 shadow-none transition-colors shrink-0">
+    <button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-white/5 transition-colors p-2 rounded-full flex items-center justify-center">
+      <div id="spinner" class="hidden w-8 h-8 rounded-full bg-surface-container flex items-center justify-center relative">
+        <div class="bp-premium-wrapper">
+          <div class="bp-premium-orb">
+            <div class="bp-orb-eyes">
+              <div class="bp-orb-eye"></div>
+              <div class="bp-orb-eye"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+    <div class="font-bold tracking-[0.2em] uppercase bg-gradient-to-r from-[#4b8eff] to-[#adc6ff] bg-clip-text text-transparent text-[13px] ml-2">Web MCP</div>
+  </header>
 
-  <div id="active-state" style="display:none">
-    <div class="status-bar">
-      <span class="status-dot"></span>
-      <span class="status-text">Live</span>
-    </div>
-    <div class="lock-banner" id="lock-banner">
-      <span class="lock-icon">🔒</span>
-      <span class="lock-text">AI is controlling the browser</span>
-    </div>
-    <div class="task" id="task-name"></div>
-    <div class="divider"></div>
-    <div class="actions-label">Activity</div>
-    <div class="actions" id="actions"></div>
-  </div>
+  <main class="flex-1 overflow-y-auto custom-scrollbar pb-24 p-container-padding flex flex-col gap-section-gap">
+    
+    <!-- Active State -->
+    <div id="active-state" class="hidden flex-col gap-section-gap flex-1">
+      <section class="flex flex-col gap-stack-gap mt-4">
+        <h2 class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Active Goal</h2>
+        <div class="active-neon-card rounded-full p-4 flex flex-col gap-4 relative overflow-hidden">
+          <div class="absolute -top-10 -right-10 w-24 h-24 bg-white rounded-full blur-[40px] opacity-20"></div>
+          
+          <div id="lock-banner" class="hidden items-center gap-2 rounded-lg p-2 z-10" style="background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.1);">
+            <span class="material-symbols-outlined text-[16px]" style="color: #adc6ff;" data-icon="lock">lock</span>
+            <span class="font-label-md text-[10px] uppercase" style="color: #adc6ff; font-weight: bold;">AI is controlling the browser</span>
+          </div>
 
-  <div id="idle-state" class="idle-state">
-    <div class="idle-icon">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="flex items-start gap-3 z-10">
+            <div class="flex flex-col gap-1">
+              <span class="font-label-md uppercase tracking-wider text-[10px]" style="color: #adc6ff; font-weight: bold;">Current Task</span>
+              <span id="current-task" class="font-body-md leading-tight text-[14px]" style="color: white; font-weight: 500;">Waiting for instructions...</span>
+            </div>
+          </div>
+          
+          <div class="flex flex-col gap-1 z-10 mt-2">
+            <div class="flex justify-between items-center">
+              <span class="font-mono-code text-[10px] text-white/80 flex items-center gap-1"><span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Processing</span>
+            </div>
+            <div class="h-1 w-full bg-black/20 rounded-full overflow-hidden relative">
+              <div class="absolute top-0 bottom-0 left-0 w-1/2 bg-white/40" style="animation: bp-scan 2s ease-in-out infinite;"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <section class="flex flex-col gap-stack-gap flex-1">
+        <div class="flex items-center justify-between">
+          <h2 class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Action Log</h2>
+          <button id="halt-btn" class="text-primary hover:text-secondary transition-colors font-label-md text-[10px] flex items-center gap-1">
+            <span class="material-symbols-outlined text-[16px]" data-icon="pause">pause</span> Halt
+          </button>
+        </div>
+        <div id="actions" class="flex flex-col relative before:absolute before:inset-y-2 before:left-[11.5px] before:w-px before:bg-white/10 ml-1">
+        </div>
+        <div class="h-16 w-full shrink-0"></div> <!-- Spacer for scrolling -->
+      </section>
     </div>
-    <div class="idle-title">Waiting for AI</div>
-    <div class="idle-text">The sidebar will show real-time activity when the AI starts controlling the browser.</div>
-  </div>
 
-  <div class="footer" id="footer" style="display:none">
-    <div class="footer-dots">
-      <span class="footer-dot"></span>
-      <span class="footer-dot"></span>
-      <span class="footer-dot"></span>
+    <!-- Idle State -->
+    <div id="idle-state" class="flex flex-col items-center justify-center h-full text-center flex-1 py-10">
+      <div class="w-16 h-16 rounded-full bg-surface-container-highest border border-outline/30 flex items-center justify-center mb-4">
+        <span class="material-symbols-outlined text-outline text-3xl" data-icon="hourglass_empty">hourglass_empty</span>
+      </div>
+      <h2 class="font-headline-md text-[16px] text-on-surface mb-1">Ready & Waiting</h2>
+      <p class="font-body-sm text-[12px] text-on-surface-variant max-w-[240px]">Real-time activity will appear here.</p>
     </div>
-    <span class="footer-text">Monitoring...</span>
-  </div>
 
-  <div id="debug-section" style="display:none; padding: 12px 20px; border-top: 1px solid rgba(56,189,248,0.1);">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-      <span style="font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.06em;">Debug Logs</span>
-      <span id="debug-clear" style="font-size:10px; color:#58a6ff; cursor:pointer;">Clear</span>
+    <!-- Debug Section -->
+    <div class="mt-auto pt-6 border-t border-white/5 flex flex-col gap-4">
+      <div id="debug-toggle" class="text-center font-label-md text-[11px] text-primary cursor-pointer hover:text-primary-container uppercase tracking-wider">Show Debug Logs</div>
+      <div id="debug-section" class="hidden flex-col gap-2">
+        <div class="flex justify-between items-center">
+          <span class="font-label-md text-[11px] text-on-surface-variant uppercase">Debug Logs</span>
+          <span id="debug-clear" class="font-label-md text-[11px] text-primary cursor-pointer hover:text-primary-container">Clear</span>
+        </div>
+        <div id="debug-logs" class="max-h-[200px] overflow-y-auto custom-scrollbar font-mono-code text-[11px] leading-relaxed text-on-surface-variant bg-surface-container-lowest p-3 rounded-lg border border-white/5"></div>
+      </div>
     </div>
-    <div id="debug-logs" style="max-height:300px; overflow-y:auto; font-family:'Cascadia Code','Fira Code',monospace; font-size:10px; line-height:1.5; color:#8b949e;"></div>
-  </div>
+  </main>
 
-  <div style="padding:8px 20px; border-top: 1px solid rgba(56,189,248,0.1);">
-    <div id="debug-toggle" style="text-align:center; font-size:11px; color:#58a6ff; cursor:pointer; text-decoration:underline;">Show Debug Logs</div>
-  </div>
 
+
+  <script src="env.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

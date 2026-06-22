@@ -1,8 +1,11 @@
-﻿{
+{
   "manifest_version": 3,
-  "name": "BrowserPilot",
+  "name": "web-mcp extension",
   "version": "1.0.0",
-  "description": "AI browser automation sidebar with real-time activity feed",
+  "description": "An dedicated in-browser automation copilot that gives AI assistants direct control over Chromium with real-time visual feedback.",
+  "icons": {
+    "128": "icon128.png"
+  },
   "permissions": [
     "sidePanel",
     "tabs",
@@ -18,8 +21,14 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
+      "js": ["env.js", "content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["sidepanel.html"],
+      "matches": ["<all_urls>"]
     }
   ],
   "side_panel": {
@@ -27,6 +36,9 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "BrowserPilot"
+    "default_title": "web-mcp",
+    "default_icon": {
+      "128": "icon128.png"
+    }
   }
 }

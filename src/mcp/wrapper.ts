@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { z } from "zod";
-import { spawn, ChildProcess } from "child_process";
+import { spawn, ChildProcess, execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -61,7 +61,7 @@ interface ProcessState {
 // ─── Constants ───────────────────────────────────────────────────────────
 
 const CHROME_DEVTOOLS_MCP_PACKAGE = "chrome-devtools-mcp";
-const CONFIG_DIR = path.join(os.homedir(), ".browser-pilot");
+const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const PID_FILE = path.join(CONFIG_DIR, "server.pid");
 
@@ -92,7 +92,7 @@ function log(msg: string, level: LogLevel = LogLevel.INFO): void {
   const configuredLevel = LOG_LEVELS[config?.logging?.level || "info"] || LogLevel.INFO;
   if (level < configuredLevel) return;
 
-  const prefix = "[browser-pilot]";
+  const prefix = "[web-mcp]";
   const levelStr = LogLevel[level].padEnd(5);
   process.stderr.write(`${prefix} [${levelStr}] ${msg}\n`);
 }
@@ -106,6 +106,15 @@ function getDefaultConfig(): Config {
   const serverScriptDev = path.join(packageRoot, "dist", "server", "server.js");
   const serverScript = fs.existsSync(serverScriptMin) ? serverScriptMin : serverScriptDev;
 
+  let extensionDir = path.join(packageRoot, "extension");
+  // During local dev, if the build hasn't run yet, fall back to the source directory
+  if (!fs.existsSync(extensionDir) || !fs.existsSync(path.join(extensionDir, "manifest.json"))) {
+    const srcExtensionDir = path.join(packageRoot, "src", "extension");
+    if (fs.existsSync(path.join(srcExtensionDir, "manifest.json"))) {
+      extensionDir = srcExtensionDir;
+    }
+  }
+
   return {
     server: {
       port: 3026,
@@ -115,11 +124,11 @@ function getDefaultConfig(): Config {
     chrome: {
       port: 9222,
       executable: "auto-detect",
-      profileDir: path.join(CONFIG_DIR, "chrome-profile"),
+      profileDir: path.join(CONFIG_DIR, "chromium-profile-v2"),
       startupTimeout: 20000,
     },
     extension: {
-      dir: path.join(packageRoot, "extension"),
+      dir: extensionDir,
     },
     logging: {
       level: "info",
@@ -147,6 +156,13 @@ function loadConfig(): Config {
       const raw = fs.readFileSync(CONFIG_FILE, "utf8");
       const userConfig = JSON.parse(raw);
       const merged = deepMerge(defaults as unknown as Record<string, unknown>, userConfig) as unknown as Config;
+      
+      // Critical Fix: Always use the dynamic paths for the current package location.
+      // If we don't do this, updating the package might continue using old files
+      // because absolute paths were saved in the user's config.json on the first run.
+      merged.server.script = defaults.server.script;
+      merged.extension.dir = defaults.extension.dir;
+
       log("Config loaded from " + CONFIG_FILE);
       return merged;
     } catch (err) {
@@ -157,7 +173,17 @@ function loadConfig(): Config {
 
   try {
     fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaults, null, 2));
+    
+    // Create a clean config for saving, excluding absolute paths that shouldn't be hardcoded
+    const configToSave = {
+      server: { port: defaults.server.port, startupTimeout: defaults.server.startupTimeout },
+      chrome: { port: defaults.chrome.port, executable: defaults.chrome.executable, startupTimeout: defaults.chrome.startupTimeout },
+      logging: defaults.logging
+    };
+    
+    const tempConfig = CONFIG_FILE + ".tmp." + Date.now();
+    fs.writeFileSync(tempConfig, JSON.stringify(configToSave, null, 2));
+    fs.renameSync(tempConfig, CONFIG_FILE);
     log("Created default config at " + CONFIG_FILE);
   } catch (err) {
     log("WARNING: Could not create config file: " + (err as Error).message, LogLevel.WARN);
@@ -178,14 +204,15 @@ async function fetchWithTimeout(url: string, timeoutMs: number = 3000, options?:
 
 // ─── Health Checks ───────────────────────────────────────────────────────
 
-async function checkServerHealth(): Promise<{ running: boolean; healthy: boolean }> {
+async function checkServerHealth(): Promise<{ healthy: boolean; data?: Record<string, unknown> }> {
   try {
-    const resp = await fetchWithTimeout(`http://localhost:${config.server.port}/.identity`, 3000);
+    const resp = await fetchWithTimeout(`http://localhost:${config.server.port}/status`, 3000);
     const data = await resp.json() as Record<string, unknown>;
-    return { running: true, healthy: data.identity === "browser-pilot-server" };
-  } catch {
-    return { running: false, healthy: false };
-  }
+    if (data && typeof data === "object" && "uptime" in data) {
+      return { healthy: true, data };
+    }
+  } catch {}
+  return { healthy: false };
 }
 
 async function checkChromeHealth(): Promise<{ running: boolean; healthy: boolean }> {
@@ -200,7 +227,7 @@ async function checkChromeHealth(): Promise<{ running: boolean; healthy: boolean
 
 async function waitForHealthy(checkFn: () => Promise<{ healthy: boolean }>, maxWaitMs: number, label: string): Promise<boolean> {
   const start = Date.now();
-  const checkInterval = 1000;
+  const checkInterval = 200;
 
   while (Date.now() - start < maxWaitMs) {
     const result = await checkFn();
@@ -215,20 +242,31 @@ async function waitForHealthy(checkFn: () => Promise<{ healthy: boolean }>, maxW
   return false;
 }
 
-// ─── Chrome Detection ────────────────────────────────────────────────────
+// ─── Chromium Detection ────────────────────────────────────────────────────
 
-function findChromePath(): string {
+async function findChromePath(): Promise<string> {
+  try {
+    const puppeteer = (await import("puppeteer")).default;
+    // Attempt to get the executable path
+    let pptrPath = await puppeteer.executablePath();
+    if (fs.existsSync(pptrPath)) {
+      return pptrPath;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+
+  // Fallback to system Chromium if puppeteer fails
   const paths = [
-    path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
-    path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
-    path.join(os.homedir(), "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe"),
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser"
   ];
 
   for (const p of paths) {
     if (fs.existsSync(p)) return p;
   }
 
-  throw new Error("Chrome not found. Install Google Chrome or set chrome.executable in config.json");
+  throw new Error("Chromium not found. Please install puppeteer properly or install chromium manually.");
 }
 
 // ─── Server Management ───────────────────────────────────────────────────
@@ -283,29 +321,32 @@ async function startServer(): Promise<boolean> {
 }
 
 async function killStaleServer(): Promise<void> {
+  // First, check if the server is actually alive and healthy
   try {
-    if (!fs.existsSync(PID_FILE)) return;
-    const pid = parseInt(fs.readFileSync(PID_FILE, "utf8").trim(), 10);
-    if (isNaN(pid)) return;
-
-    // Check if the PID is alive and is a node process
-    try {
-      process.kill(pid, 0); // Signal 0 = check if alive
-      // Process is alive — kill it
-      log("  → Killing stale server (PID: " + pid + ")");
-      process.kill(pid, "SIGTERM");
-      await sleep(500);
-      // Force kill if still alive
-      try { process.kill(pid, 0); process.kill(pid, "SIGKILL"); } catch {}
-    } catch {
-      // Process is already dead — fine
+    const resp = await fetchWithTimeout(`http://localhost:${config.server.port}/ping`, 1000);
+    const data = await resp.json() as { status?: string };
+    if (data && data.status === "ok") {
+      log("  → Existing server is healthy, no need to kill.");
+      return;
     }
-
-    // Clean up PID file
-    try { fs.unlinkSync(PID_FILE); } catch {}
   } catch {
-    // Ignore errors
+    // Server is dead or not responding, proceed to kill
   }
+
+  // Use OS commands to aggressively find and kill any squatter on the port, even if PID_FILE is missing
+  log("  → Aggressively clearing port " + config.server.port);
+  try {
+    if (process.platform === "win32") {
+      execSync(`powershell -Command "$pidToKill = Get-NetTCPConnection -LocalPort ${config.server.port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -First 1; if ($pidToKill) { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue }"`, { stdio: "ignore" });
+    } else {
+      execSync(`lsof -t -i:${config.server.port} | xargs -r kill -9`, { stdio: "ignore" });
+    }
+  } catch {
+    // Ignore OS kill errors
+  }
+
+  // Also clean up PID file
+  try { fs.unlinkSync(PID_FILE); } catch {}
 }
 
 function startHeartbeat(): void {
@@ -331,14 +372,35 @@ function stopHeartbeat(): void {
   }
 }
 
-// ─── Chrome Management ───────────────────────────────────────────────────
+// ─── Chromium Management ───────────────────────────────────────────────────
 
 async function launchChrome(): Promise<boolean> {
-  log("Launching Chrome with extension auto-load...");
+  log("Launching Chromium with extension auto-load...");
+
+  // Force kill any stale zombie Chromium processes running this profile
+  try {
+    log("  -> Cleaning up stale Web MCP Chromium processes...");
+    if (process.platform === "win32") {
+      // Kill web-mcp Chromium ONLY
+      execSync(
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like "*.web-mcp*" } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+        { shell: "powershell.exe", stdio: "ignore" }
+      );
+    } else {
+      execSync(`pkill -f "chrome.*\\.web-mcp/chromium-profile-v2"`, { stdio: "ignore" });
+    }
+    // Give the OS time to fully terminate processes and release file locks
+    await sleep(1500);
+    log("  -> Chromium processes cleared");
+  } catch {
+    // Ignore errors (usually means no processes found, which is fine)
+  }
 
   let chromeExe: string;
   try {
-    chromeExe = config.chrome.executable === "auto-detect" ? findChromePath() : config.chrome.executable;
+    chromeExe = config.chrome.executable === "auto-detect" ? await findChromePath() : config.chrome.executable;
   } catch (err) {
     log("ERROR: " + (err as Error).message, LogLevel.ERROR);
     return false;
@@ -351,67 +413,189 @@ async function launchChrome(): Promise<boolean> {
   }
 
   const profileDir = config.chrome.profileDir;
+
   if (!fs.existsSync(profileDir)) {
     fs.mkdirSync(profileDir, { recursive: true });
   }
 
-  // Clear Chrome's extension cache to force reload of latest extension files
-  const extCacheDir = path.join(profileDir, "Default", "Extensions");
-  const crxCacheDir = path.join(profileDir, "extensions_crx_cache");
+
+
+  // Create a safe, user-owned copy of the extension directory
+  // This prevents EACCES permission denied errors if the package was installed globally via root (sudo npm install -g)
+  const userExtensionDir = path.join(CONFIG_DIR, "extension");
+  let finalExtensionDir = userExtensionDir;
   try {
-    if (fs.existsSync(extCacheDir)) fs.rmSync(extCacheDir, { recursive: true, force: true });
-    if (fs.existsSync(crxCacheDir)) fs.rmSync(crxCacheDir, { recursive: true, force: true });
-    log("  → Cleared extension cache");
-  } catch {
-    // Ignore — Chrome will still work, just might use cached files
+    if (!fs.existsSync(path.join(userExtensionDir, "manifest.json"))) {
+      fs.cpSync(extensionDir, userExtensionDir, { recursive: true, force: true });
+    }
+    
+    // Inject environment variables atomically
+    const envFile = path.join(userExtensionDir, "env.js");
+    const tempEnv = envFile + ".tmp." + Date.now();
+    fs.writeFileSync(tempEnv, `globalThis.WEB_MCP_PORT = ${config.server.port};\n`);
+    fs.renameSync(tempEnv, envFile);
+  } catch (err) {
+    log("WARNING: Failed to copy extension directory to " + userExtensionDir + ": " + (err as Error).message, LogLevel.WARN);
+    log("Falling back to original extension directory: " + extensionDir, LogLevel.WARN);
+    finalExtensionDir = extensionDir;
+  }
+
+  // ── Seed Chromium profile with Developer Mode enabled ───────────────────
+  // Chromium requires Developer Mode ON in Local State to allow unpacked
+  // extensions (--load-extension) to inject content scripts and display UI.
+  // The flag lives in Local State (profile root), NOT Default/Preferences.
+  try {
+    fs.mkdirSync(path.join(profileDir, "Default"), { recursive: true });
+    const localStatePath = path.join(profileDir, "Local State");
+    let localState: Record<string, unknown> = {};
+    if (fs.existsSync(localStatePath)) {
+      try { localState = JSON.parse(fs.readFileSync(localStatePath, "utf8")); } catch { /* ignore corrupt/empty file */ }
+    }
+    if (!localState.extensions || typeof localState.extensions !== "object") {
+      localState.extensions = {};
+    }
+    const ext = localState.extensions as Record<string, unknown>;
+    if (!ext.ui || typeof ext.ui !== "object") {
+      ext.ui = {};
+    }
+    (ext.ui as Record<string, unknown>).developer_mode = true;
+    // Write atomically to prevent corruption
+    const tmpPath = localStatePath + ".tmp." + Date.now();
+    fs.writeFileSync(tmpPath, JSON.stringify(localState, null, 2));
+    fs.renameSync(tmpPath, localStatePath);
+    log("  → Developer Mode seeded in Local State ✓");
+  } catch (err) {
+    log("  → WARNING: Failed to seed Developer Mode in Local State: " + (err as Error).message, LogLevel.WARN);
   }
 
   const args = [
     `--remote-debugging-port=${config.chrome.port}`,
     `--user-data-dir=${profileDir}`,
-    `--load-extension=${extensionDir}`,
+    `--load-extension=${finalExtensionDir}`,
+    "--disable-blink-features=AutomationControlled",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-popup-blocking",
     "--disable-translate",
     "--disable-default-apps",
     "--disable-fre",
+    "--disable-session-crashed-bubble",
   ];
+
+  fs.writeFileSync(path.join(CONFIG_DIR, "chrome-args-debug.log"), args.join("\n"));
+
+  // Capture Chromium's stderr to a log file — lets us see exactly why Chromium rejects the extension
+  const chromeStderrLog = path.join(CONFIG_DIR, "chrome-stderr.log");
+  let stderrFd: number | null = null;
+  try {
+    stderrFd = fs.openSync(chromeStderrLog, "w");
+  } catch { /* ignore */ }
+
+  fs.writeFileSync(path.join(CONFIG_DIR, "debug-extension-dir.txt"), "Extension Dir: " + finalExtensionDir + "\nArgs: " + args.join(" "));
+  fs.writeFileSync(path.join(CONFIG_DIR, "debug-env-dump.json"), JSON.stringify(process.env, null, 2));
+
+  // Clean environment variables to prevent OpenCode's Electron variables from breaking Chromium
+  const cleanEnv: Record<string, string> = {};
+  for (const key of Object.keys(process.env)) {
+    if (!key.toUpperCase().startsWith("ELECTRON_") && 
+        !key.toUpperCase().startsWith("OPENCODE_") && 
+        !key.toUpperCase().startsWith("VSCODE_")) {
+      cleanEnv[key] = process.env[key] as string;
+    }
+  }
 
   const proc = spawn(chromeExe, args, {
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", stderrFd ?? "ignore"],
+    env: cleanEnv,
   });
 
-  proc.unref();
+  if (stderrFd !== null) {
+    try { fs.closeSync(stderrFd); } catch { /* ignore */ }
+  }
 
-  state.chrome.weStarted = true;
-  state.chrome.pid = proc.pid || null;
+  // Detect single-instance handoff: Chromium immediately exits (pid dead within 500ms)
+  await sleep(500);
+  const procStillAlive = (() => {
+    try { process.kill(proc.pid!, 0); return true; } catch { return false; }
+  })();
+  if (!procStillAlive) {
+    log("  → WARNING: Chromium process (PID " + proc.pid + ") exited immediately!", LogLevel.WARN);
+    log("  → This usually means another Chromium instance was running and stole the launch.", LogLevel.WARN);
+    log("  → Chromium stderr log: " + chromeStderrLog, LogLevel.WARN);
+    // Try once more: the kill above might not have had time to fully close all Chromium windows
+    log("  → Retrying after additional cleanup delay...");
+    try {
+      if (process.platform === "win32") {
+        const profileDirEscaped = config.chrome.profileDir.replace(/\\/g, "\\\\");
+        execSync(
+          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+          { shell: "powershell.exe", stdio: "ignore" }
+        );
+      }
+    } catch { /* ignore */ }
+    await sleep(2000);
+    // Reopen stderr log for retry
+    let retryStderrFd: number | null = null;
+    try { retryStderrFd = fs.openSync(chromeStderrLog, "w"); } catch { /* ignore */ }
+    const retryProc = spawn(chromeExe, args, {
+      detached: true,
+      stdio: ["ignore", "ignore", retryStderrFd ?? "ignore"],
+    });
+    if (retryStderrFd !== null) { try { fs.closeSync(retryStderrFd); } catch { /* ignore */ } }
+    retryProc.unref();
+    state.chrome.pid = retryProc.pid || null;
+    log("  → Retry Chromium launched (PID: " + retryProc.pid + ")");
+  }
 
-  log("  → Chrome launched (PID: " + proc.pid + ")");
+  // If the first proc died (handoff), state.chrome.pid was already updated in the retry block above.
+  // Otherwise, set it from the original proc.
+  if (procStillAlive) {
+    proc.unref();
+    state.chrome.weStarted = true;
+    state.chrome.pid = proc.pid || null;
+  } else {
+    state.chrome.weStarted = true;
+    // pid was already set in retry block
+  }
+
+  log("  → Chromium launched (PID: " + (state.chrome.pid ?? "unknown") + ")");
   log("  → Extension loaded from: " + extensionDir);
-  log("  → Waiting for Chrome to be ready...");
+  log("  → Waiting for Chromium to be ready...");
 
-  const healthy = await waitForHealthy(checkChromeHealth, config.chrome.startupTimeout, "Chrome");
+  const healthy = await waitForHealthy(checkChromeHealth, config.chrome.startupTimeout, "Chromium");
   if (healthy) {
     state.chrome.running = true;
     state.chrome.healthy = true;
 
-    // Check extension service worker
-    try {
-      const resp = await fetchWithTimeout(`http://127.0.0.1:${config.chrome.port}/json`, 3000);
-      const targets = await resp.json() as Array<Record<string, unknown>>;
-      const serviceWorker = targets.find((t) => t.type === "service_worker");
-      if (serviceWorker) {
-        log("  → Extension service worker detected ✓");
-      } else {
-        log("  → Extension service worker not yet detected (may take a moment)", LogLevel.WARN);
+    // Verify extension service worker is loaded (prevents hijacking an unprotected Chromium on 9222)
+    let extensionFound = false;
+    for (let i = 0; i < 5; i++) {
+      try {
+        const resp = await fetchWithTimeout(`http://127.0.0.1:${config.chrome.port}/json`, 2000);
+        const targets = await resp.json() as Array<Record<string, unknown>>;
+        if (targets.find((t) => t.type === "service_worker")) {
+          extensionFound = true;
+          break;
+        }
+      } catch {
+        // Ignore fetch errors during retry
       }
-    } catch {
-      // Ignore
+      await sleep(1000);
     }
 
-    return true;
+    if (extensionFound) {
+      log("  → Extension service worker detected ✓");
+      return true;
+    } else {
+      log("  → ERROR: Chromium is running on port " + config.chrome.port + ", but the Web MCP extension is NOT loaded!", LogLevel.ERROR);
+      log("  → This usually means you manually opened Chromium with --remote-debugging-port=" + config.chrome.port, LogLevel.ERROR);
+      state.chrome.running = false;
+      state.chrome.healthy = false;
+      // Intentionally crash the launch sequence
+      // We do NOT want to control an unprotected browser
+      throw new Error("Chromium is running but the Web MCP extension failed to load. Please close any manual Chromium instances using port " + config.chrome.port + ".");
+    }
   }
 
   return false;
@@ -483,7 +667,7 @@ async function connectToChromeDevtoolsMcp(): Promise<boolean> {
     });
 
     chromeDevtoolsClient = new Client(
-      { name: "browser-pilot-wrapper", version: "1.0.0" },
+      { name: "web-mcp-wrapper", version: "1.0.0" },
       { capabilities: {} }
     );
 
@@ -547,23 +731,33 @@ async function ensureBrowserReady(): Promise<{ ok: boolean; error?: string }> {
     } else {
       state.server.running = true;
       state.server.healthy = true;
+      
+      // Check if user recently halted the session
+      if (serverHealth.data && typeof serverHealth.data.lastUserHaltTime === "number") {
+        const timeSinceHalt = Date.now() - serverHealth.data.lastUserHaltTime;
+        if (timeSinceHalt < 10000) {
+          log("[ensureBrowserReady] User halted the session recently. Aborting.");
+          state.session.status = "idle";
+          return { ok: false, error: "The user manually halted the session. You MUST stop execution immediately and await further instructions." };
+        }
+      }
     }
 
-    // Start Chrome if needed
-    log("[ensureBrowserReady] Checking Chrome health...");
+    // Start Chromium if needed
+    log("[ensureBrowserReady] Checking Chromium health...");
     const chromeHealth = await checkChromeHealth();
-    log("[ensureBrowserReady] Chrome healthy: " + chromeHealth.healthy);
+    log("[ensureBrowserReady] Chromium healthy: " + chromeHealth.healthy);
     if (!chromeHealth.healthy) {
-      log("[ensureBrowserReady] Chrome not running, auto-launching...");
-      // Close stale chrome-devtools-mcp client if Chrome was down
+      log("[ensureBrowserReady] Chromium not running, auto-launching...");
+      // Close stale chrome-devtools-mcp client if Chromium was down
       if (chromeDevtoolsClient) {
         try { await chromeDevtoolsClient.close(); } catch {}
         chromeDevtoolsClient = null;
       }
       if (!(await launchChrome())) {
         state.session.status = "idle";
-        log("[ensureBrowserReady] Failed to launch Chrome", LogLevel.ERROR);
-        return { ok: false, error: "Failed to launch Chrome" };
+        log("[ensureBrowserReady] Failed to launch Chromium", LogLevel.ERROR);
+        return { ok: false, error: "Failed to launch Chromium" };
       }
     } else {
       state.chrome.running = true;
@@ -608,20 +802,33 @@ async function ensureBrowserReady(): Promise<{ ok: boolean; error?: string }> {
 async function callChromeDevtoolsTool(
   toolName: string,
   args: Record<string, unknown>,
-  sidebarText: string,
+  sidebarText: string | null,
   sidebarType: string
 ): Promise<{ content: { type: "text"; text: string }[] }> {
+  // Check if the user recently halted the session BEFORE doing anything else
+  const health = await checkServerHealth();
+  if (health.healthy && health.data && typeof health.data.lastUserHaltTime === "number") {
+    const timeSinceHalt = Date.now() - health.data.lastUserHaltTime;
+    if (timeSinceHalt < 10000) {
+      log("[callChromeDevtoolsTool] User halted the session recently. Aborting.");
+      state.session.status = "idle";
+      return {
+        content: [{ type: "text" as const, text: "ERROR: The user manually halted the session. You MUST stop execution immediately and await further instructions." }],
+      };
+    }
+  }
+
   // Ensure browser is ready
   const ready = await ensureBrowserReady();
   if (!ready.ok) {
     return {
-      content: [{ type: "text" as const, text: "ERROR: " + ready.error }],
+      content: [{ type: "text" as const, text: "ERROR: " + ready.error + "\n\nCRITICAL AI INSTRUCTION: DO NOT attempt to fix this by killing the Chromium process manually (e.g. Stop-Process or taskkill), and DO NOT try to rebuild the extension using npm commands. Simply report this exact error to the user and await instructions." }],
     };
   }
 
   if (!chromeDevtoolsClient) {
     return {
-      content: [{ type: "text" as const, text: "ERROR: chrome-devtools-mcp not connected" }],
+      content: [{ type: "text" as const, text: "ERROR: chrome-devtools-mcp not connected" + "\n\nCRITICAL AI INSTRUCTION: DO NOT attempt to fix this by killing the Chromium process manually (e.g. Stop-Process or taskkill), and DO NOT try to rebuild the extension using npm commands. Simply report this exact error to the user and await instructions." }],
     };
   }
 
@@ -632,24 +839,93 @@ async function callChromeDevtoolsTool(
     await httpRequest("POST", "/session/lock", { owner: "agent", action: toolName });
 
     // Log to sidebar
-    await addSidebarAction(sidebarText, sidebarType);
+    if (sidebarText !== null) {
+      await addSidebarAction(sidebarText, sidebarType);
+    }
 
-    // Call chrome-devtools-mcp
-    const result = await chromeDevtoolsClient.callTool({
-      name: toolName,
-      arguments: args,
-    });
+    // Delay to let the visual fake cursor reach the element before actual execution!
+    // This perfectly synchronizes the UI with the headless browser action.
+    const isMouse = ["click", "hover", "drag"].includes(sidebarType);
+    const isKeyboard = ["type", "fill", "keypress"].includes(sidebarType);
+    let flagSet = false;
+    
+    try {
+      if (isMouse || isKeyboard) {
+        const flagValue = isMouse ? 'mouse' : 'keyboard';
+        // Tell the JS capture listeners and CSS overlay to let the next CDP event through!
+        // We use requestAnimationFrame to guarantee the browser's rendering pipeline has fully applied the CSS pointer-events rules before we dispatch the click.
+        await chromeDevtoolsClient.callTool({
+          name: "evaluate_script",
+          arguments: { function: `() => { 
+            return new Promise(resolve => {
+              document.documentElement.setAttribute('data-bp-ai-acting', '${flagValue}'); 
+              document.documentElement.offsetHeight; // force sync layout
+              let done = false;
+              const finish = () => { if(!done) { done=true; resolve(); } };
+              requestAnimationFrame(() => requestAnimationFrame(finish));
+              setTimeout(finish, 100); // safety fallback
+            });
+          }` }
+        }).catch((err) => { console.error("EVALUATE SCRIPT FAILED:", err); });
+        flagSet = true;
+        
+        if (isMouse) {
+          await sleep(50); // micro-delay to ensure CDP event ordering
+        }
+      }
 
-    // Lock stays "agent" for the entire session — only browser_stop resets it
-    state.session.status = "ready";
+      // Call chrome-devtools-mcp
+      const result = await chromeDevtoolsClient.callTool({
+        name: toolName,
+        arguments: args,
+      });
 
-    return result as { content: { type: "text"; text: string }[] };
+      // Lock stays "agent" for the entire session — only browser_stop resets it
+      state.session.status = "ready";
+
+      const resObj = result as { content: { type: "text"; text: string }[] };
+      if (resObj && Array.isArray(resObj.content)) {
+        resObj.content.push({
+          type: "text",
+          text: "\n\nCRITICAL SYSTEM REMINDER: If you have completely finished the user's request, you MUST call the `browser_done` tool NOW to release control of the browser. If you still have more steps to do, continue."
+        });
+      }
+
+      return resObj;
+    } catch (err) {
+      state.session.status = "ready";
+      
+      const msg = (err as Error).message || String(err);
+      const isDisconnect = msg.includes("fetch failed") || msg.includes("socket") || msg.includes("close") || msg.includes("disconnect") || msg.includes("ECONNREFUSED");
+      
+      if (isDisconnect) {
+        log("Chromium CDP connection lost! Resetting state.", LogLevel.WARN);
+        chromeDevtoolsClient = null;
+        state.chrome.healthy = false;
+        state.session.status = "idle";
+      }
+
+      return {
+        content: [{ type: "text" as const, text: "Error: " + msg + (isDisconnect ? "\n\nThe browser disconnected. Your next tool call will automatically restart it." : "") }],
+      }
+    } finally {
+      if (flagSet && chromeDevtoolsClient) {
+        // Remove the flag so human users are blocked again.
+        // We delay this slightly (100ms) to ensure trailing async events 
+        // (like keyup or React synthetic events) have time to bubble 
+        // through the DOM before the blocker re-engages.
+        await sleep(100);
+        await chromeDevtoolsClient.callTool({
+          name: "evaluate_script",
+          arguments: { function: "() => { document.documentElement.removeAttribute('data-bp-ai-acting'); }" }
+        }).catch(() => {});
+      }
+    }
   } catch (err) {
-    // Even on error, keep lock as agent so user can't accidentally interfere
+    // This catches errors from httpRequest, addSidebarAction, etc.
     state.session.status = "ready";
-
     return {
-      content: [{ type: "text" as const, text: "Error: " + (err as Error).message }],
+      content: [{ type: "text" as const, text: "Error: " + ((err as Error).message || String(err)) }],
     };
   }
 }
@@ -676,29 +952,12 @@ async function cleanup(): Promise<void> {
     chromeDevtoolsClient = null;
   }
 
-  // Stop server if we started it
-  if (state.server.weStarted && state.server.process) {
-    try {
-      state.server.process.kill();
-      log("Stopped server (PID: " + state.server.pid + ")");
-    } catch {
-      // Ignore
-    }
-  }
-
-  // Stop Chrome if we started it
-  if (state.chrome.weStarted) {
-    try {
-      const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
-      spawn("powershell", [
-        "-Command",
-        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*${profileDir}*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
-      ], { detached: true, stdio: "ignore" }).unref();
-      log("Stopped Chrome");
-    } catch {
-      // Ignore
-    }
-  }
+  // We intentionally DO NOT kill Chromium or the Server here.
+  // In a multi-client environment (e.g. OpenCode + Cursor running simultaneously),
+  // killing the shared server or browser would violently disconnect the other client.
+  // The server/browser will self-terminate via the service worker heartbeat if 
+  // all clients disconnect and the wrapper dies.
+  // Hard manual kills are deferred to `web-mcp stop`.
 
   // End sidebar if active
   if (sidebarActive) {
@@ -714,7 +973,7 @@ async function cleanup(): Promise<void> {
 // ─── MCP Server ──────────────────────────────────────────────────────────
 
 const server = new McpServer({
-  name: "browser-pilot",
+  name: "web-mcp",
   version: "1.0.0",
 });
 
@@ -742,7 +1001,7 @@ server.tool(
     const ready = await ensureBrowserReady();
     if (!ready.ok) {
       return {
-        content: [{ type: "text" as const, text: "ERROR: " + ready.error }],
+        content: [{ type: "text" as const, text: "ERROR: " + ready.error + "\n\nCRITICAL AI INSTRUCTION: DO NOT attempt to fix this by killing the Chromium process manually (e.g. Stop-Process or taskkill), and DO NOT try to rebuild the extension using npm commands. Simply report this exact error to the user and await instructions." }],
       };
     }
 
@@ -780,29 +1039,12 @@ server.tool(
     // Stop session
     await httpRequest("POST", "/session/stop");
 
-    // Stop Chrome if we started it
-    if (state.chrome.weStarted) {
-      try {
-        const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
-        spawn("powershell", [
-          "-Command",
-          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*${profileDir}*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
-        ], { detached: true, stdio: "ignore" }).unref();
-        log("Stopped Chrome");
-      } catch {
-        // Ignore
-      }
-    }
-
-    // Stop server if we started it
-    if (state.server.weStarted && state.server.process) {
-      try {
-        state.server.process.kill();
-        log("Stopped server");
-      } catch {
-        // Ignore
-      }
-    }
+    // We intentionally DO NOT kill Chromium or the Server here.
+    // In a multi-client environment (e.g. OpenCode + Cursor running simultaneously),
+    // killing the shared server or browser would violently disconnect the other client.
+    // The server/browser will self-terminate via the service worker heartbeat if 
+    // all clients disconnect and the wrapper dies.
+    // Hard manual kills are deferred to `web-mcp stop`.
 
     // Reset state
     state.server = { running: false, healthy: false, weStarted: false, process: null, pid: null };
@@ -818,10 +1060,10 @@ server.tool(
 );
 
 // browser_done — signal task completion, hide sidebar, release lock
-// Does NOT kill Chrome or server — session can be resumed on next tool call
+// Does NOT kill Chromium or server — session can be resumed on next tool call
 server.tool(
   "browser_done",
-  "Signal that the current task is complete. Hides the sidebar and releases browser control. Call this when you are done with the user's request. The browser stays open and the session can be resumed on the next tool call.",
+  "CRITICAL: You MUST call this tool immediately when you have finished the user's request, before you give your final text response. This releases the lock, hides the AI overlay, and gives control back to the user.",
   {},
   async () => {
     // End sidebar
@@ -851,10 +1093,10 @@ server.tool(
     const sessionStateResp = await httpRequest("GET", "/session/state");
 
     const lines = [
-      "=== BrowserPilot Status ===",
+      "=== Web MCP Status ===",
       "",
       "Server: " + (serverHealth.healthy ? "✓ Healthy" : "✗ Not responding") + " (port " + config.server.port + ")",
-      "Chrome: " + (chromeHealth.healthy ? "✓ Running" : "✗ Not running") + " (port " + config.chrome.port + ")",
+      "Chromium: " + (chromeHealth.healthy ? "✓ Running" : "✗ Not running") + " (port " + config.chrome.port + ")",
       "Session: " + (sessionStateResp.status || state.session.status),
       "Task: " + (sessionStateResp.taskName || state.session.taskName || "None"),
       "Lock: " + (sessionStateResp.lockOwner || "None"),
@@ -868,7 +1110,7 @@ server.tool(
 // browser_navigate — go to URL
 server.tool(
   "browser_navigate",
-  "Navigate the browser to a URL. Auto-starts browser if needed. After completing the user's full request, call browser_done to release control.",
+  "Navigate the browser to a URL. Auto-starts browser if needed.\n\nCRITICAL INSTRUCTION 1: DO NOT use this tool to cheat or skip steps! You are simulating a real human user. Only use browser_navigate for the initial entry point (e.g., google.com or the app homepage), and then you MUST use browser_click, browser_type, etc., to navigate through the website manually.\n\nCRITICAL INSTRUCTION 2: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     url: z.string().describe("The URL to navigate to"),
   },
@@ -885,7 +1127,7 @@ server.tool(
 // browser_click — click an element
 server.tool(
   "browser_click",
-  "Click an element on the page. Use browser_snapshot first to get element UIDs. After completing the user's full request, call browser_done to release control.",
+  "Click an element on the page. Use browser_snapshot first to get element UIDs.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     uid: z.string().describe("Element UID from snapshot (e.g., 'a[1]', 'button[2]')"),
   },
@@ -902,7 +1144,7 @@ server.tool(
 // browser_type — type text (with optional submit key)
 server.tool(
   "browser_type",
-  "Type text into the currently focused element. Optionally press a key after typing to submit forms. After completing the user's full request, call browser_done to release control.",
+  "Type text into the currently focused element. Optionally press a key after typing to submit forms.\n\nCRITICAL INSTRUCTION 1: This tool DOES NOT take a 'uid' parameter! It blindly types into whatever is currently focused. You MUST use browser_click on an input field first to focus it, before calling this tool! Alternatively, use browser_fill instead.\n\nCRITICAL INSTRUCTION 2: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     text: z.string().describe("Text to type"),
     submitKey: z.string().optional().describe("Optional key to press after typing (e.g., 'Enter', 'Tab', 'Escape'). Use this to submit forms after typing."),
@@ -933,17 +1175,35 @@ server.tool(
 // browser_fill — fill an input field
 server.tool(
   "browser_fill",
-  "Fill a specific input field by element UID. After completing the user's full request, call browser_done to release control.",
+  "Fill a specific input field by element UID.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     uid: z.string().describe("Element UID of the input field"),
     value: z.string().describe("Value to fill in the field"),
   },
   async ({ uid, value }: { uid: string; value: string }) => {
+    // Override chrome-devtools-mcp "fill" because it doesn't trigger React onChange properly
+    // 1. Click to focus (silent)
+    await callChromeDevtoolsTool("click", { uid }, null, "click");
+    
+    // 2. Clear input using JS (triggers React)
+    const clearJs = `() => {
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        el.value = '';
+        const tracker = el._valueTracker;
+        if (tracker) tracker.setValue('');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }`;
+    await callChromeDevtoolsTool("evaluate_script", { function: clearJs }, null, "evaluate");
+    
+    // 3. Type new value
     return callChromeDevtoolsTool(
-      "fill",
-      { uid, value },
-      "Filling: \"" + String(value).substring(0, 30) + "\"",
-      "type"
+      "type_text",
+      { text: value },
+      `Filling (${uid}): "${String(value).substring(0, 30)}"`,
+      "fill"
     );
   }
 );
@@ -961,7 +1221,7 @@ server.tool(
     const dy = direction === "up" ? -pixels : pixels;
     return callChromeDevtoolsTool(
       "evaluate_script",
-      { script: `window.scrollBy(0, ${dy})` },
+      { function: `() => { window.scrollBy(0, ${dy}); }` },
       "Scrolling " + (direction || "down") + " " + pixels + "px",
       "scroll"
     );
@@ -971,7 +1231,7 @@ server.tool(
 // browser_screenshot — take a screenshot
 server.tool(
   "browser_screenshot",
-  "Take a screenshot of the current page.",
+  "Take a screenshot of the current page.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     fullPage: z.boolean().optional().describe("Capture full page (true) or viewport only (false, default)"),
   },
@@ -988,7 +1248,7 @@ server.tool(
 // browser_snapshot — get page content
 server.tool(
   "browser_snapshot",
-  "Get the current page content as a DOM/accessibility snapshot. Use this to find element UIDs for clicking.",
+  "Get the current page content as a DOM/accessibility snapshot. Use this to find element UIDs for clicking.\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {},
   async () => {
     return callChromeDevtoolsTool(
@@ -1003,7 +1263,7 @@ server.tool(
 // browser_press_key — press a keyboard key
 server.tool(
   "browser_press_key",
-  "Press a keyboard key (e.g., Enter, Tab, Escape).",
+  "Press a keyboard key (e.g., Enter, Tab, Escape).\n\nCRITICAL INSTRUCTION: When you have completely finished fulfilling the user's entire request, you MUST call browser_done to release control of the browser! Do not forget!",
   {
     key: z.string().describe("Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown')"),
   },
@@ -1052,7 +1312,7 @@ server.tool(
   async ({ script }: { script: string }) => {
     return callChromeDevtoolsTool(
       "evaluate_script",
-      { script },
+      { function: `async () => { ${script} }` },
       "Executing JavaScript",
       "script"
     );
@@ -1133,7 +1393,7 @@ server.tool(
   async () => {
     return callChromeDevtoolsTool(
       "evaluate_script",
-      { script: "window.location.href" },
+      { function: "() => window.location.href" },
       "Getting current URL",
       "default"
     );
@@ -1152,7 +1412,7 @@ server.tool(
       "hover",
       { uid },
       "Hovering over element (" + uid + ")",
-      "default"
+      "hover"
     );
   }
 );
@@ -1169,7 +1429,7 @@ server.tool(
     return callChromeDevtoolsTool(
       "drag",
       { from_uid: fromUid, to_uid: toUid },
-      "Dragging from " + fromUid + " to " + toUid,
+      "Dragging from (" + fromUid + ") to (" + toUid + ")",
       "drag"
     );
   }
@@ -1178,7 +1438,7 @@ server.tool(
 // ─── Main ────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  log("Starting BrowserPilot MCP server...");
+  log("Starting Web MCP MCP server...");
 
   // Load config
   config = loadConfig();
@@ -1216,3 +1476,4 @@ main().catch((err: Error) => {
   log("Fatal error: " + err.message, LogLevel.ERROR);
   cleanup().finally(() => process.exit(1));
 });
+
