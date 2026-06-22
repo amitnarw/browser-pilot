@@ -8,7 +8,9 @@ This file provides critical context for AI agents working on the Web MCP project
 **2. NEVER Use `taskkill` on Chrome**: You MUST NOT run commands like `taskkill /f /im chrome.exe`. This kills the user's personal browsing sessions. If you absolutely must clean up stale processes, ONLY use the `web-mcp troubleshoot` command.
 **3. NEVER Try to Fix the Port**: If port 9222 is busy or Chrome fails to connect, do NOT try to kill all chromes or change the port manually. Report the error to the user or run `web-mcp troubleshoot`.
 **4. NO CHEATING - SIMULATE REAL USERS**: The purpose of this tool is to test website functionality like a real user. You MUST NOT use `browser_navigate` to jump directly to internal pages or cheat by typing direct URLs. Use `browser_navigate` ONLY for the initial entry point, and then rely strictly on `browser_click`, `browser_type`, etc., to navigate the site.
-
+**5. HOLISTIC DEBUGGING REQUIRED**: You must look at the whole codebase and trace the full execution lifecycle end-to-end. Do not just focus on one isolated section or assume an isolated fix is sufficient. A bug or configuration generation issue in one file (e.g., `setup.ts`) can silently override and break fixes you made in another file (e.g., `wrapper.ts`). Always consider how your changes impact the whole system, and what other sections might be impacting the current problem.
+**6. CONSIDER PERSISTENT EXTERNAL STATE**: Configuration files (e.g., `~/.web-mcp/config.json`) survive package uninstallations, codebase rebuilds, and laptop restarts. Never assume `npm install` or restarting processes clears out stale application data.
+**7. VERIFY SYSTEM COMMANDS**: Do not blindly assume commands like `Stop-Process`, `pkill`, or `npm install -g .` worked. Always verify that your regex/filter actually matched the running processes, confirm they are dead, and read error logs carefully.
 ## 🔴 CRITICAL: Extension Reload Requirement
 
 **After EVERY code change to the extension, you MUST reload it in Chrome.**
@@ -37,10 +39,12 @@ OpenCode Chat → Spawns Wrapper (node wrapper.min.js)
                     ├── Launches Chrome (port 9222) — LONG LIVED
                     └── Connects to chrome-devtools-mcp
                         
-Wrapper dies → Server + Chrome may SURVIVE as orphans
+Wrapper dies → Server + Chrome SURVIVE temporarily, but will SELF-DESTRUCT.
 ```
 
-**Key rule:** When the wrapper dies (chat ends, crashes), child processes may stay alive. This causes port conflicts on next run.
+**Key rule:** The Server and Chrome are long-lived singleton processes designed to be shared across multiple AI clients (e.g. OpenCode and Cursor running simultaneously). 
+- If the wrapper dies (chat ends, crashes), the `service_worker` in Chrome will stop receiving heartbeat pings. After 60 seconds of silence, the Chrome extension will automatically close all windows to prevent "Zombie Chrome" resource leaks.
+- `browser_stop` **does NOT** kill the Chrome process or HTTP server anymore, as this would violently break other active AI clients sharing the session. It only disconnects the local wrapper.
 
 ### Kill All Stale Processes & Clear Caches
 ```powershell
@@ -124,6 +128,32 @@ web-mcp troubleshoot
 ### 15. The Silent evaluate_script Failure
 **Problem:** Even after fixing the layout flush, clicks still hit the overlay. `wrapper.ts` was passing `{ script: "..." }` to the MCP tool `evaluate_script`. However, the `chrome-devtools-mcp` package expects `{ function: "() => { ... }" }`. Because the argument was named wrong, `evaluate_script` silently executed `(undefined)()`, never actually setting the `data-bp-ai-acting` flag at all! This left the `pointer-events: auto` overlay permanently active, completely blinding the AI to any click interactions.
 **Fix:** Refactored `wrapper.ts` to pass the correct parameter `{ function: "() => { ... }" }` to `evaluate_script`, permanently fixing the AI's ability to click elements.
+
+## Key Fixes Applied (June 2026 - Concurrency & Lifecycle)
+
+### 16. Zombie Chrome Prevention (The Heartbeat)
+**Problem:** Wrappers crashing or being forcefully closed left Chrome running endlessly in the background.
+**Fix:** Implemented a heartbeat in `service_worker.js`. It pings the server every 3s. If the server goes offline for >60s, Chrome automatically self-destructs by closing all windows.
+
+### 17. Multi-Agent Orchestration Safety
+**Problem:** If two OpenCode chats used Web MCP concurrently, one calling `browser_stop` would run `Stop-Process` and kill the shared server/browser, violently disconnecting the other agent.
+**Fix:** Removed destructive process kills from `browser_stop` and `cleanup()`. They now only disconnect the local CDP session. Hard kills are reserved exclusively for the `web-mcp stop` CLI command.
+
+### 18. EADDRINUSE Port Squatter Safety
+**Problem:** If `server.pid` was missing, but port 3026 was in use, `startServer()` crashed with `EADDRINUSE`.
+**Fix:** `killStaleServer()` now uses aggressive OS-level commands (`Get-NetTCPConnection` or `lsof`) to forcefully reclaim the port if the server fails the `/ping` check, bypassing the need for a PID file entirely.
+
+### 19. Strict Chrome Port Hijack Prevention
+**Problem:** If the user manually opened Chrome on port 9222, the AI would connect to it but silently fail to inject the extension, operating an unprotected browser.
+**Fix:** `ensureBrowserReady()` now strictly verifies the extension's `service_worker` is loaded. If missing, it throws a fatal error rather than hijacking the browser.
+
+### 20. Atomic File JSON Safety
+**Problem:** Multiple wrappers booting simultaneously corrupted `config.json` via synchronous `fs.writeFileSync`.
+**Fix:** Refactored all configuration writes across `setup.ts`, `browser.ts`, and `wrapper.ts` to use atomic `.tmp` file creation + `fs.renameSync`.
+
+### 21. Bulletproof CDP Hit-Testing Sync
+**Problem:** The arbitrary `sleep(500)` before CDP clicks was brittle and slow.
+**Fix:** Replaced it with a native `requestAnimationFrame` layout flush injected via `evaluate_script`, mathematically guaranteeing the CSS pointer-events blocker is disabled before the click lands.
 
 ## How It Works (End-to-End Flow)
 

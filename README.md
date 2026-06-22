@@ -8,6 +8,8 @@ Web MCP is a foreground AI browser automation tool designed to act as an **In-Br
 - **Auto-Injection**: The MCP server automatically launches a dedicated Chrome profile and dynamically injects the Chrome Extension—no manual "Load Unpacked" required by the end user!
 - **Visual Feedback**: Features a native Chrome Side Panel with a real-time action feed and an ambient light overlay that activates when the AI takes control.
 - **Human-AI Collision Protection**: Web browsers aren't built for two mice. Web MCP uses an advanced CSS DOM-overlay shield to physically block your hardware mouse clicks from disrupting the AI's synthetic DevTools clicks while it's actively working, gracefully dropping the shield exactly when you need to take control back.
+- **Multi-Agent Concurrency**: Designed to be shared safely. Multiple AI agents (e.g. Cursor and OpenCode) can use the Web MCP singleton backend simultaneously without killing each other's sessions.
+- **Zero-Zombie Background Management**: The Chrome extension maintains a rigorous heartbeat with the local server. If your AI chat crashes or is forcefully closed, the browser securely self-destructs after 60 seconds of silence to prevent memory leaks.
 
 ## Prerequisites
 > [!IMPORTANT]

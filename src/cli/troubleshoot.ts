@@ -26,11 +26,11 @@ export async function runTroubleshooter(): Promise<string[]> {
     if (process.platform === "win32") {
       // Kill node wrapper
       try {
-        execSync(`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" -or $_.CommandLine -like "*chrome-devtools*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
+        execSync(`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { ($_.CommandLine -like "*web-mcp*" -or $_.CommandLine -like "*chrome-devtools*") -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`, { shell: "powershell.exe", stdio: "ignore" });
       } catch {}
       // Kill chrome
       try {
-        execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | Stop-Process -Force`, { shell: "powershell.exe", stdio: "ignore" });
+        execSync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`, { shell: "powershell.exe", stdio: "ignore" });
       } catch {}
     } else {
       try { execSync(`pkill -f "node.*web-mcp"`, { stdio: "ignore" }); } catch {}

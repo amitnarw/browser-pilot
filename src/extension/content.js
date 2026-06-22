@@ -361,7 +361,7 @@
     }
   }
 
-  function removeOverlay(){if(!overlay)return;stopStateCheck();window.removeEventListener("mousemove", trackEyes);if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;}
+  function removeOverlay(){if(!overlay)return;clearIdleTimer();stopStateCheck();window.removeEventListener("mousemove", trackEyes);if(overlay.parentNode)overlay.parentNode.removeChild(overlay);overlay=null;}
 
   function showStopDialog() {
     var dOverlay = document.createElement('div');
@@ -407,8 +407,31 @@
 
   function stopWebMCP(){console.log("[Web MCP] Stop confirmed");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"STOP_BROWSER"});}catch(e){}}
 
-  function showBadge(){}
-  function removeBadge(){}
+  function showBadge() {
+    console.log("[Web MCP] showBadge() called");
+    if (badge) return;
+    badge = document.createElement("div");
+    badge.className = "bp-badge";
+    var dot = document.createElement("div");
+    dot.className = "bp-badge-dot";
+    var text = document.createElement("div");
+    text.className = "bp-badge-title";
+    text.innerText = "Web MCP Ready";
+    badge.appendChild(dot);
+    badge.appendChild(text);
+    badge.addEventListener("click", function() {
+      try { chrome.runtime.sendMessage({type:"OPEN_SIDEBAR"}); } catch(e) {}
+    });
+    document.body.appendChild(badge);
+    console.log("[Web MCP] showBadge() appended to body");
+  }
+
+  function removeBadge() {
+    if (badge && badge.parentNode) {
+      badge.parentNode.removeChild(badge);
+    }
+    badge = null;
+  }
 
   function takeControl(){console.log("[Web MCP] Take Control clicked");clearIdleTimer();removeOverlay();removeGradientAnimation();try{chrome.runtime.sendMessage({type:"USER_TAKEOVER"});}catch(e){}}
 
@@ -423,8 +446,51 @@
   });
 
   (async function(){
-    try{var port=globalThis.WEB_MCP_PORT||3026;var r=await fetch("http://localhost:"+port+"/sidebar/state");var s=await r.json();lastActiveState=!!s.active;
-    if(s.active){currentTaskName=s.taskName||"";currentActionCount=(s.actions||[]).length;var la=s.actions&&s.actions.length>0?s.actions[s.actions.length-1]:null;lastActionType=la?la.type:"default";createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la);}else{showBadge();}}catch(e){}
-    setTimeout(async function(){if(lastActiveState)return;try{var port=globalThis.WEB_MCP_PORT||3026;var r2=await fetch("http://localhost:"+port+"/sidebar/state");var s2=await r2.json();if(s2.active){lastActiveState=true;currentTaskName=s2.taskName||"";currentActionCount=(s2.actions||[]).length;var la2=s2.actions&&s2.actions.length>0?s2.actions[s2.actions.length-1]:null;lastActionType=la2?la2.type:"default";removeBadge();createOverlay();updateStatus(currentTaskName,currentActionCount,lastActionType);handleNewAction(la2);}}catch(x){}},4000);
+    console.log("[Web MCP] Initializing...");
+    try {
+      var port = globalThis.WEB_MCP_PORT || 3026;
+      var r = await fetch("http://localhost:" + port + "/sidebar/state");
+      var s = await r.json();
+      lastActiveState = !!s.active;
+      if (s.active) {
+        currentTaskName = s.taskName || "";
+        currentActionCount = (s.actions || []).length;
+        var la = s.actions && s.actions.length > 0 ? s.actions[s.actions.length - 1] : null;
+        lastActionType = la ? la.type : "default";
+        createOverlay();
+        updateStatus(currentTaskName, currentActionCount, lastActionType);
+        handleNewAction(la);
+      } else {
+        console.log("[Web MCP] Server running, session inactive");
+        showBadge();
+      }
+    } catch(e) {
+      console.log("[Web MCP] Fetch failed:", e.message);
+      showBadge();
+    }
+    
+    setTimeout(async function(){
+      if(lastActiveState) return;
+      try {
+        var port = globalThis.WEB_MCP_PORT || 3026;
+        var r2 = await fetch("http://localhost:" + port + "/sidebar/state");
+        var s2 = await r2.json();
+        if (s2.active) {
+          lastActiveState = true;
+          currentTaskName = s2.taskName || "";
+          currentActionCount = (s2.actions || []).length;
+          var la2 = s2.actions && s2.actions.length > 0 ? s2.actions[s2.actions.length - 1] : null;
+          lastActionType = la2 ? la2.type : "default";
+          removeBadge();
+          createOverlay();
+          updateStatus(currentTaskName, currentActionCount, lastActionType);
+          handleNewAction(la2);
+        } else {
+          showBadge();
+        }
+      } catch(x) {
+        showBadge();
+      }
+    }, 4000);
   })();
 })();

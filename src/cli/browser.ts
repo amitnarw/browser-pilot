@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 
 const CONFIG_DIR = path.join(os.homedir(), ".web-mcp");
 
@@ -63,6 +63,31 @@ export async function launchBrowser(): Promise<string[]> {
     } else if (!fs.existsSync(extensionDir)) {
       throw new Error("Source extension directory not found.");
     }
+
+    // Clear Chrome extension caches
+    const defaultExt = path.join(profileDir, "Default", "Extensions");
+    if (fs.existsSync(defaultExt)) fs.rmSync(defaultExt, { recursive: true, force: true });
+    const crxCache = path.join(profileDir, "extensions_crx_cache");
+    if (fs.existsSync(crxCache)) fs.rmSync(crxCache, { recursive: true, force: true });
+
+    // Seed Developer Mode to allow unpacked extensions
+    try {
+      fs.mkdirSync(path.join(profileDir, "Default"), { recursive: true });
+      const localStatePath = path.join(profileDir, "Local State");
+      let localState: any = {};
+      if (fs.existsSync(localStatePath)) {
+        try { localState = JSON.parse(fs.readFileSync(localStatePath, "utf8")); } catch { /* ignore */ }
+      }
+      if (!localState.extensions) localState.extensions = {};
+      if (!localState.extensions.ui) localState.extensions.ui = {};
+      localState.extensions.ui.developer_mode = true;
+      const tmpPath = localStatePath + ".tmp." + Date.now();
+      fs.writeFileSync(tmpPath, JSON.stringify(localState, null, 2));
+      fs.renameSync(tmpPath, localStatePath);
+    } catch (e) {
+      // ignore
+    }
+
   } catch (e) {
     lines.push("\x1b[31mERROR: Failed to copy extension: " + (e as Error).message + "\x1b[0m");
     if (!fs.existsSync(extensionDir)) return lines;
@@ -72,19 +97,42 @@ export async function launchBrowser(): Promise<string[]> {
     "--remote-debugging-port=9222",
     `--user-data-dir=${profileDir}`,
     `--load-extension=${extensionDir}`,
+    `--disable-extensions-except=${extensionDir}`,
     "--enable-automation",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-popup-blocking",
     "--disable-translate",
-    "--disable-default-apps",
     "--disable-fre",
     "https://example.com"
   ];
 
+  const cleanEnv: Record<string, string> = {};
+  for (const key of Object.keys(process.env)) {
+    if (!key.toUpperCase().startsWith("ELECTRON_") && 
+        !key.toUpperCase().startsWith("OPENCODE_") && 
+        !key.toUpperCase().startsWith("VSCODE_")) {
+      cleanEnv[key] = process.env[key] as string;
+    }
+  }
+
+  console.log("Chrome args:", args);
+
+  // Kill existing isolated profile process before relaunch
+  try {
+    if (process.platform === 'win32') {
+      execSync(`wmic process where "name='chrome.exe' and commandline like '%chrome-profile-v2%'" call terminate`, { stdio: 'ignore' });
+    } else {
+      execSync(`pkill -f "user-data-dir=${profileDir}"`, { stdio: 'ignore' });
+    }
+  } catch (e) {
+    // Ignore error
+  }
+
   const proc = spawn(chromeExe, args, {
     detached: true,
-    stdio: "ignore"
+    stdio: "inherit",
+    env: cleanEnv
   });
 
   proc.unref();

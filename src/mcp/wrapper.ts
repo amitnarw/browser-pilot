@@ -181,7 +181,9 @@ function loadConfig(): Config {
       logging: defaults.logging
     };
     
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(configToSave, null, 2));
+    const tempConfig = CONFIG_FILE + ".tmp." + Date.now();
+    fs.writeFileSync(tempConfig, JSON.stringify(configToSave, null, 2));
+    fs.renameSync(tempConfig, CONFIG_FILE);
     log("Created default config at " + CONFIG_FILE);
   } catch (err) {
     log("WARNING: Could not create config file: " + (err as Error).message, LogLevel.WARN);
@@ -328,29 +330,32 @@ async function startServer(): Promise<boolean> {
 }
 
 async function killStaleServer(): Promise<void> {
+  // First, check if the server is actually alive and healthy
   try {
-    if (!fs.existsSync(PID_FILE)) return;
-    const pid = parseInt(fs.readFileSync(PID_FILE, "utf8").trim(), 10);
-    if (isNaN(pid)) return;
-
-    // Check if the PID is alive and is a node process
-    try {
-      process.kill(pid, 0); // Signal 0 = check if alive
-      // Process is alive — kill it
-      log("  → Killing stale server (PID: " + pid + ")");
-      process.kill(pid, "SIGTERM");
-      await sleep(500);
-      // Force kill if still alive
-      try { process.kill(pid, 0); process.kill(pid, "SIGKILL"); } catch {}
-    } catch {
-      // Process is already dead — fine
+    const resp = await fetchWithTimeout(`http://localhost:${config.server.port}/ping`, 1000);
+    const data = await resp.json() as { status?: string };
+    if (data && data.status === "ok") {
+      log("  → Existing server is healthy, no need to kill.");
+      return;
     }
-
-    // Clean up PID file
-    try { fs.unlinkSync(PID_FILE); } catch {}
   } catch {
-    // Ignore errors
+    // Server is dead or not responding, proceed to kill
   }
+
+  // Use OS commands to aggressively find and kill any squatter on the port, even if PID_FILE is missing
+  log("  → Aggressively clearing port " + config.server.port);
+  try {
+    if (process.platform === "win32") {
+      execSync(`powershell -Command "$pidToKill = Get-NetTCPConnection -LocalPort ${config.server.port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -First 1; if ($pidToKill) { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue }"`, { stdio: "ignore" });
+    } else {
+      execSync(`lsof -t -i:${config.server.port} | xargs -r kill -9`, { stdio: "ignore" });
+    }
+  } catch {
+    // Ignore OS kill errors
+  }
+
+  // Also clean up PID file
+  try { fs.unlinkSync(PID_FILE); } catch {}
 }
 
 function startHeartbeat(): void {
@@ -389,11 +394,11 @@ async function launchChrome(): Promise<boolean> {
       execSync(
         `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
         `Where-Object { $_.CommandLine -like "*.web-mcp*" } | ` +
-        `Stop-Process -Force -ErrorAction SilentlyContinue`,
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
         { shell: "powershell.exe", stdio: "ignore" }
       );
     } else {
-      execSync(`pkill -f "chrome.*\\.web-mcp/chrome-profile"`, { stdio: "ignore" });
+      execSync(`pkill -f "chrome.*\\.web-mcp/chrome-profile-v2"`, { stdio: "ignore" });
     }
     // Give the OS time to fully terminate processes and release file locks
     await sleep(1500);
@@ -409,8 +414,6 @@ async function launchChrome(): Promise<boolean> {
     log("ERROR: " + (err as Error).message, LogLevel.ERROR);
     return false;
   }
-
-
 
   const extensionDir = config.extension.dir;
   if (!fs.existsSync(extensionDir)) {
@@ -431,26 +434,53 @@ async function launchChrome(): Promise<boolean> {
   const userExtensionDir = path.join(CONFIG_DIR, "extension");
   let finalExtensionDir = userExtensionDir;
   try {
-    fs.cpSync(extensionDir, userExtensionDir, { recursive: true, force: true });
+    if (!fs.existsSync(path.join(userExtensionDir, "manifest.json"))) {
+      fs.cpSync(extensionDir, userExtensionDir, { recursive: true, force: true });
+    }
     
-    // Inject environment variables into extension before loading
-    fs.writeFileSync(path.join(userExtensionDir, "env.js"), `globalThis.WEB_MCP_PORT = ${config.server.port};\n`);
+    // Inject environment variables atomically
+    const envFile = path.join(userExtensionDir, "env.js");
+    const tempEnv = envFile + ".tmp." + Date.now();
+    fs.writeFileSync(tempEnv, `globalThis.WEB_MCP_PORT = ${config.server.port};\n`);
+    fs.renameSync(tempEnv, envFile);
   } catch (err) {
     log("WARNING: Failed to copy extension directory to " + userExtensionDir + ": " + (err as Error).message, LogLevel.WARN);
     log("Falling back to original extension directory: " + extensionDir, LogLevel.WARN);
     finalExtensionDir = extensionDir;
   }
 
-  // Fix Windows path escaping bugs in Chrome CLI
-  // (Removed custom replace, letting Node's spawn handle escaping naturally)
-  const safeProfileDir = profileDir;
-  const safeExtensionDir = finalExtensionDir;
+  // ── Seed Chrome profile with Developer Mode enabled ───────────────────
+  // Chrome requires Developer Mode ON in Local State to allow unpacked
+  // extensions (--load-extension) to inject content scripts and display UI.
+  // The flag lives in Local State (profile root), NOT Default/Preferences.
+  try {
+    fs.mkdirSync(path.join(profileDir, "Default"), { recursive: true });
+    const localStatePath = path.join(profileDir, "Local State");
+    let localState: Record<string, unknown> = {};
+    if (fs.existsSync(localStatePath)) {
+      try { localState = JSON.parse(fs.readFileSync(localStatePath, "utf8")); } catch { /* ignore corrupt/empty file */ }
+    }
+    if (!localState.extensions || typeof localState.extensions !== "object") {
+      localState.extensions = {};
+    }
+    const ext = localState.extensions as Record<string, unknown>;
+    if (!ext.ui || typeof ext.ui !== "object") {
+      ext.ui = {};
+    }
+    (ext.ui as Record<string, unknown>).developer_mode = true;
+    // Write atomically to prevent corruption
+    const tmpPath = localStatePath + ".tmp." + Date.now();
+    fs.writeFileSync(tmpPath, JSON.stringify(localState, null, 2));
+    fs.renameSync(tmpPath, localStatePath);
+    log("  → Developer Mode seeded in Local State ✓");
+  } catch (err) {
+    log("  → WARNING: Failed to seed Developer Mode in Local State: " + (err as Error).message, LogLevel.WARN);
+  }
 
   const args = [
     `--remote-debugging-port=${config.chrome.port}`,
-    `--user-data-dir=${safeProfileDir}`,
-    `--disable-extensions-except=${safeExtensionDir}`,
-    `--load-extension=${safeExtensionDir}`,
+    `--user-data-dir=${profileDir}`,
+    `--load-extension=${finalExtensionDir}`,
     "--enable-automation",
     "--no-first-run",
     "--no-default-browser-check",
@@ -458,6 +488,7 @@ async function launchChrome(): Promise<boolean> {
     "--disable-translate",
     "--disable-default-apps",
     "--disable-fre",
+    "--disable-session-crashed-bubble",
   ];
 
   fs.writeFileSync(path.join(CONFIG_DIR, "chrome-args-debug.log"), args.join("\n"));
@@ -469,7 +500,7 @@ async function launchChrome(): Promise<boolean> {
     stderrFd = fs.openSync(chromeStderrLog, "w");
   } catch { /* ignore */ }
 
-  fs.writeFileSync(path.join(CONFIG_DIR, "debug-extension-dir.txt"), "Extension Dir: " + safeExtensionDir + "\nArgs: " + args.join(" "));
+  fs.writeFileSync(path.join(CONFIG_DIR, "debug-extension-dir.txt"), "Extension Dir: " + finalExtensionDir + "\nArgs: " + args.join(" "));
   fs.writeFileSync(path.join(CONFIG_DIR, "debug-env-dump.json"), JSON.stringify(process.env, null, 2));
 
   // Clean environment variables to prevent OpenCode's Electron variables from breaking Chrome
@@ -507,7 +538,7 @@ async function launchChrome(): Promise<boolean> {
       if (process.platform === "win32") {
         const profileDirEscaped = config.chrome.profileDir.replace(/\\/g, "\\\\");
         execSync(
-          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
+          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
           { shell: "powershell.exe", stdio: "ignore" }
         );
       }
@@ -546,21 +577,34 @@ async function launchChrome(): Promise<boolean> {
     state.chrome.running = true;
     state.chrome.healthy = true;
 
-    // Check extension service worker
-    try {
-      const resp = await fetchWithTimeout(`http://127.0.0.1:${config.chrome.port}/json`, 3000);
-      const targets = await resp.json() as Array<Record<string, unknown>>;
-      const serviceWorker = targets.find((t) => t.type === "service_worker");
-      if (serviceWorker) {
-        log("  → Extension service worker detected ✓");
-      } else {
-        log("  → Extension service worker not yet detected (may take a moment)", LogLevel.WARN);
+    // Verify extension service worker is loaded (prevents hijacking an unprotected Chrome on 9222)
+    let extensionFound = false;
+    for (let i = 0; i < 5; i++) {
+      try {
+        const resp = await fetchWithTimeout(`http://127.0.0.1:${config.chrome.port}/json`, 2000);
+        const targets = await resp.json() as Array<Record<string, unknown>>;
+        if (targets.find((t) => t.type === "service_worker")) {
+          extensionFound = true;
+          break;
+        }
+      } catch {
+        // Ignore fetch errors during retry
       }
-    } catch {
-      // Ignore
+      await sleep(1000);
     }
 
-    return true;
+    if (extensionFound) {
+      log("  → Extension service worker detected ✓");
+      return true;
+    } else {
+      log("  → ERROR: Chrome is running on port " + config.chrome.port + ", but the Web MCP extension is NOT loaded!", LogLevel.ERROR);
+      log("  → This usually means you manually opened Chrome with --remote-debugging-port=" + config.chrome.port, LogLevel.ERROR);
+      state.chrome.running = false;
+      state.chrome.healthy = false;
+      // Intentionally crash the launch sequence
+      // We do NOT want to control an unprotected browser
+      throw new Error("Chrome is running but the Web MCP extension failed to load. Please close any manual Chrome instances using port " + config.chrome.port + ".");
+    }
   }
 
   return false;
@@ -818,14 +862,24 @@ async function callChromeDevtoolsTool(
       if (isMouse || isKeyboard) {
         const flagValue = isMouse ? 'mouse' : 'keyboard';
         // Tell the JS capture listeners and CSS overlay to let the next CDP event through!
+        // We use requestAnimationFrame to guarantee the browser's rendering pipeline has fully applied the CSS pointer-events rules before we dispatch the click.
         await chromeDevtoolsClient.callTool({
           name: "evaluate_script",
-          arguments: { function: `() => { document.documentElement.setAttribute('data-bp-ai-acting', '${flagValue}'); document.documentElement.offsetHeight; }` }
+          arguments: { function: `() => { 
+            return new Promise(resolve => {
+              document.documentElement.setAttribute('data-bp-ai-acting', '${flagValue}'); 
+              document.documentElement.offsetHeight; // force sync layout
+              let done = false;
+              const finish = () => { if(!done) { done=true; resolve(); } };
+              requestAnimationFrame(() => requestAnimationFrame(finish));
+              setTimeout(finish, 100); // safety fallback
+            });
+          }` }
         }).catch((err) => { console.error("EVALUATE SCRIPT FAILED:", err); });
         flagSet = true;
         
         if (isMouse) {
-          await sleep(500); // Only wait for layout flush and hit-testing if we need to hit-test!
+          await sleep(50); // micro-delay to ensure CDP event ordering
         }
       }
 
@@ -907,29 +961,12 @@ async function cleanup(): Promise<void> {
     chromeDevtoolsClient = null;
   }
 
-  // Stop server if we started it
-  if (state.server.weStarted && state.server.process) {
-    try {
-      state.server.process.kill();
-      log("Stopped server (PID: " + state.server.pid + ")");
-    } catch {
-      // Ignore
-    }
-  }
-
-  // Stop Chrome if we started it
-  if (state.chrome.weStarted) {
-    try {
-      const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
-      spawn("powershell", [
-        "-Command",
-        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
-      ], { detached: true, stdio: "ignore" }).unref();
-      log("Stopped Chrome");
-    } catch {
-      // Ignore
-    }
-  }
+  // We intentionally DO NOT kill Chrome or the Server here.
+  // In a multi-client environment (e.g. OpenCode + Cursor running simultaneously),
+  // killing the shared server or browser would violently disconnect the other client.
+  // The server/browser will self-terminate via the service worker heartbeat if 
+  // all clients disconnect and the wrapper dies.
+  // Hard manual kills are deferred to `web-mcp stop`.
 
   // End sidebar if active
   if (sidebarActive) {
@@ -1011,29 +1048,12 @@ server.tool(
     // Stop session
     await httpRequest("POST", "/session/stop");
 
-    // Stop Chrome if we started it
-    if (state.chrome.weStarted) {
-      try {
-        const profileDir = config.chrome.profileDir.replace(/\\/g, "\\\\");
-        spawn("powershell", [
-          "-Command",
-          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*.web-mcp*" } | Stop-Process -Force -ErrorAction SilentlyContinue`,
-        ], { detached: true, stdio: "ignore" }).unref();
-        log("Stopped Chrome");
-      } catch {
-        // Ignore
-      }
-    }
-
-    // Stop server if we started it
-    if (state.server.weStarted && state.server.process) {
-      try {
-        state.server.process.kill();
-        log("Stopped server");
-      } catch {
-        // Ignore
-      }
-    }
+    // We intentionally DO NOT kill Chrome or the Server here.
+    // In a multi-client environment (e.g. OpenCode + Cursor running simultaneously),
+    // killing the shared server or browser would violently disconnect the other client.
+    // The server/browser will self-terminate via the service worker heartbeat if 
+    // all clients disconnect and the wrapper dies.
+    // Hard manual kills are deferred to `web-mcp stop`.
 
     // Reset state
     state.server = { running: false, healthy: false, weStarted: false, process: null, pid: null };

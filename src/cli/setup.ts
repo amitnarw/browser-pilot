@@ -11,7 +11,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 const DEFAULT_CONFIG = {
   server: { port: 3026 },
-  chrome: { port: 9222, executable: "auto-detect", profileDir: path.join(CONFIG_DIR, "chrome-profile") },
+  chrome: { port: 9222, executable: "auto-detect", profileDir: path.join(CONFIG_DIR, "chrome-profile-v2") },
   logging: { level: "info" },
 };
 
@@ -179,7 +179,9 @@ export async function uninstallClient(choiceValue: string): Promise<string[]> {
       }
 
       if (modified) {
-        fs.writeFileSync(p, JSON.stringify(config, null, 2));
+        const tempP = p + ".tmp." + Date.now();
+        fs.writeFileSync(tempP, JSON.stringify(config, null, 2));
+        fs.renameSync(tempP, p);
         lines.push(`\x1b[32m✓ Removed from ${client}\x1b[0m`);
         removedCount++;
       }
@@ -219,7 +221,9 @@ export async function configureClient(choiceValue: string): Promise<string[]> {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   }
   if (!fs.existsSync(CONFIG_FILE)) {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2));
+    const tempConfig = CONFIG_FILE + ".tmp." + Date.now();
+    fs.writeFileSync(tempConfig, JSON.stringify(DEFAULT_CONFIG, null, 2));
+    fs.renameSync(tempConfig, CONFIG_FILE);
   }
 
   const configPath = getConfigPath(choiceValue);
@@ -268,7 +272,9 @@ export async function configureClient(choiceValue: string): Promise<string[]> {
     };
   }
 
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+  const tempConfigPath = configPath + ".tmp." + Date.now();
+  fs.writeFileSync(tempConfigPath, JSON.stringify(config, null, 2));
+  fs.renameSync(tempConfigPath, configPath);
   
   lines.push(`\x1b[32m✓ Successfully added web-mcp to:\x1b[0m`);
   lines.push(`  ${configPath}`);

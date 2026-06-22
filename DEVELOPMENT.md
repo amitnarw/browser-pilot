@@ -117,6 +117,10 @@ AI calls browser_stop
 - `browser_done` tool — signals task completion, hides overlay, releases lock
 - 90-second idle timeout — auto-closes sidebar if AI forgets `browser_done`
 - Tool descriptions updated — all browser tools tell AI to call `browser_done` when done
+- **Multi-client safe orchestration** — `browser_stop` and `cleanup()` no longer hard-kill the shared server/Chrome processes, allowing multiple AIs to safely share the singleton backend.
+- **Strict Port Hijack safety** — `ensureBrowserReady()` strictly checks for the extension `service_worker` and fatally crashes if it's missing (prevents hijacking unprotected Chrome windows).
+- **Atomic File JSON Safety** — `config.json` and `env.js` writes are now perfectly atomic via `.tmp` and `fs.renameSync`.
+- **Bulletproof hit-testing** — Switched `sleep(500)` to `requestAnimationFrame` for lightning-fast, guaranteed CDP layout flushes.
 
 ### Coordination Server (`src/server/server.ts`)
 - Express HTTP server on port 3026
@@ -124,13 +128,14 @@ AI calls browser_stop
 - Lock state management (agent/user/null)
 - Session endpoints: `/session/start`, `/session/stop`, `/session/lock`, `/session/state`
 - Sidebar endpoints: `/sidebar/start`, `/sidebar/end`, `/sidebar/action`, `/sidebar/state`
-- PID file at `~/.web-mcp/server.pid`
+- Health endpoints: `/ping` endpoint added to cleanly differentiate between stale PID files and live servers.
+- PID file at `~/.web-mcp/server.pid` (supplemented by OS-level `Get-NetTCPConnection`/`lsof` port checks).
 - Recordings at `~/.web-mcp/recordings/`
 - `server/logger.ts` — Persistent file logger with 10MB rotation, 7 files kept at `~/.web-mcp/logs/server.log`
 
 ### Chrome Extension
 - `manifest.json` — MV3, permissions: sidePanel, tabs, activeTab
-- `service_worker.js` — SSE client with periodic reconnection, broadcasts LOCK_STATE to tabs
+- `service_worker.js` — SSE client with periodic reconnection, broadcasts LOCK_STATE to tabs. Now includes a **heartbeat monitor**: pings the local server every 3s and automatically self-destructs (closes all Chrome windows) if the server goes offline for >60s, preventing "Zombie Chrome" memory leaks.
 - `content.js` — Blocking overlay with Hover.dev-style ambient light sweep + centered status bar. CSS `pointer-events: auto` blocks user mouse/touch. No JS capture listeners (they blocked AI tool events from CDP). Status bar shows: animated premium orb + status text + "Open Sidebar" + "Stop" buttons.
 - `sidepanel.html/js` — Dark-themed activity feed with active task card and dune-wind gradient.
 - `popup.html/js` — Status popup

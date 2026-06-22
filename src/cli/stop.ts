@@ -32,17 +32,17 @@ export async function stopProcesses(): Promise<string[]> {
   }
 
   // Stop Chrome with our profile
-  const profileDir = path.join(CONFIG_DIR, "chrome-profile");
+  const profileDir = path.join(CONFIG_DIR, "chrome-profile-v2");
   const winProfileDir = profileDir.replace(/\\/g, "\\\\");
   try {
     if (process.platform === "win32") {
       await execAsync(
-        `powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name='chrome.exe'\\" | Where-Object { $_.CommandLine -like '*${winProfileDir}*' } | Stop-Process -Force -ErrorAction SilentlyContinue"`,
+        `powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name='chrome.exe'\\" | Where-Object { $_.CommandLine -like '*${winProfileDir}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
         { timeout: 10000 }
       );
     } else {
       // macOS / Linux
-      await execAsync(`pkill -f "chrome.*\\.web-mcp/chrome-profile"`, { timeout: 10000 });
+      await execAsync(`pkill -f "chrome.*\\.web-mcp/chrome-profile-v2"`, { timeout: 10000 });
     }
     lines.push("Stopped Chrome instances with Web MCP profile");
   } catch {

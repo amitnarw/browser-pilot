@@ -101,6 +101,33 @@ setInterval(function() {
   }
 }, 3000);
 
+// --- ZOMBIE PROCESS PREVENTION ---
+// If the Node wrapper crashes unexpectedly, Chrome stays alive forever as an orphan.
+// We periodically ping the server to ensure our parent process is still alive.
+// If it disappears for > 60 seconds, we cleanly shut down Chrome.
+var consecutivePingFailures = 0;
+setInterval(function() {
+  fetch(SERVER_URL + "/ping", { method: "GET" })
+    .then(function(res) {
+      if (res.ok) {
+        consecutivePingFailures = 0;
+      } else {
+        consecutivePingFailures++;
+      }
+    })
+    .catch(function() {
+      consecutivePingFailures++;
+      if (consecutivePingFailures >= 20) { // 20 * 3s = 60s
+        log("Server heartbeat failed for 60 seconds. Parent process likely crashed. Self-destructing Chrome to prevent zombie process...");
+        chrome.windows.getAll({}, function(windows) {
+          windows.forEach(function(win) {
+            chrome.windows.remove(win.id);
+          });
+        });
+      }
+    });
+}, 3000);
+
 chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
   if (msg.type === "POPUP_GET_STATUS") {
     log("[POPUP_GET_STATUS] Received");

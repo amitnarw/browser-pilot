@@ -226,6 +226,10 @@ app.get("/preview", (_req: Request, res: Response) => {
   res.sendFile(path.join(__dirname, "../../extension/preview.html"));
 });
 
+app.get("/ping", (_req: Request, res: Response) => {
+  res.json({ status: "ok", identity: "web-mcp-server" });
+});
+
 app.get("/status", (_req: Request, res: Response) => {
   res.json({
     sidebarActive: sidebarState.active,
