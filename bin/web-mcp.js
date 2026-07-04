@@ -67,17 +67,17 @@
         console.log("  web-mcp          Open the interactive dashboard");
         console.log("  web-mcp mcp      Run MCP server (used automatically by AI clients)");
         console.log("  web-mcp setup    Configure AI Client (Setup) or Uninstall");
-        console.log("  web-mcp browser  Launch the isolated Chrome browser manually");
+        console.log("  web-mcp browser  Launch the isolated Chromium browser manually");
         console.log("  web-mcp troubleshoot  Troubleshoot and fix environment issues");
         console.log("  web-mcp test     Test Setup & Configurations");
-        console.log("  web-mcp status   Check Server & Chrome Status");
-        console.log("  web-mcp stop     Stop Server & Chrome");
+        console.log("  web-mcp status   Check Server & Chromium Status");
+        console.log("  web-mcp stop     Stop Server & Chromium");
         console.log("  web-mcp help     Show this help menu");
         console.log("  web-mcp about    About Web MCP");
         console.log("");
         if (command === "about") {
           console.log("Web MCP is a dedicated browser automation layer designed for AI assistants.");
-          console.log("It uses a local server and a dedicated Chrome extension to provide a");
+          console.log("It uses a local server and a dedicated Chromium extension to provide a");
           console.log("collision-free, transparent browser automation experience.");
           console.log("");
         }

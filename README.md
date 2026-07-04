@@ -62,17 +62,17 @@ The CLI auto-installer can automatically configure any of the following:
 
 | Client | Config Location | Notes |
 |--------|----------------|-------|
-| **OpenCode** | `~/.opencode.json` | Standard `mcpServers` format |
-| **Claude Desktop** | `%APPDATA%/Claude/claude_desktop_config.json` | Standard `mcpServers` format |
-| **Claude Code (CLI)** | `~/.claude/settings.json` | Standard `mcpServers` format |
-| **Cursor** | `~/.cursor/mcp.json` | Standard `mcpServers` format |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Standard `mcpServers` format |
-| **Zed Editor** | `%APPDATA%/Zed/settings.json` | Uses `context_servers` key |
-| **Sourcegraph Cody** | VS Code global storage | Standard `mcpServers` format |
-| **OpenAI Codex** | `~/.codex/config.toml` | TOML format; also installs `model_instructions_file` to override built-in browser |
+| **OpenCode** | `~/.config/opencode/opencode.json` | `mcp` key with `type: "local"`, `command` array |
+| **Claude Desktop** | `%APPDATA%/Claude/claude_desktop_config.json` | `mcpServers` key with `type: "stdio"` |
+| **Claude Code (CLI)** | `~/.claude.json` | `mcpServers` key with `type: "stdio"` |
+| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` key |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` key |
+| **Zed Editor** | `%APPDATA%/Zed/settings.json` | `context_servers` key |
+| **Sourcegraph Cody** | VS Code global storage | `mcpServers` key |
+| **OpenAI Codex** | `~/.codex/config.toml` | `[mcp_servers.web-mcp]` TOML block |
 | **ChatGPT Desktop** | Manual (no local config file) | Instructions shown in CLI |
-| **Antigravity IDE** | `~/.gemini/antigravity/mcp_config.json` | Standard `mcpServers` format |
-| **Roo Code (Cline)** | `~/.cline/data/settings/cline_mcp_settings.json` | Standard `mcpServers` format |
+| **Antigravity IDE** | `~/.gemini/antigravity/mcp_config.json` | `mcpServers` key |
+| **Cline** | `~/.cline/data/settings/cline_mcp_settings.json` | `mcpServers` key |
 
 ## 🛠️ Exposed MCP Tools Reference
 

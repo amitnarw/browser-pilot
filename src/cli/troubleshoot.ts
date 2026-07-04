@@ -31,12 +31,12 @@ export async function runTroubleshooter(onProgress?: (lines: string[]) => void):
   // Step 2: Kill Stale Processes
   try {
     if (process.platform === "win32") {
-      try { await execAsync(`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { ($_.CommandLine -like "*web-mcp*" -or $_.CommandLine -like "*chrome-devtools*") -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`, { shell: "powershell.exe" }); } catch {}
-      try { await execAsync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like "*web-mcp*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`, { shell: "powershell.exe" }); } catch {}
+      try { await execAsync(`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { ($_.CommandLine -like '*dist\\server\\server.min.js*' -or $_.CommandLine -like '*dist\\mcp\\wrapper.min.js*' -or $_.CommandLine -like '*chrome-devtools*') -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`, { shell: "powershell.exe" }); } catch {}
+      try { await execAsync(`Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like '*chromium-profile-v2*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`, { shell: "powershell.exe" }); } catch {}
     } else {
-      try { await execAsync(`pkill -f "node.*web-mcp"`); } catch {}
+      try { await execAsync(`pkill -f "dist/server/server.min.js" 2>/dev/null; pkill -f "dist/mcp/wrapper.min.js" 2>/dev/null`); } catch {}
       try { await execAsync(`pkill -f "node.*chrome-devtools"`); } catch {}
-      try { await execAsync(`pkill -f "chrome.*\\.web-mcp"`); } catch {}
+      try { await execAsync(`pkill -f "chrome.*chromium-profile-v2"`); } catch {}
     }
     // Give OS time to release file locks
     await new Promise(r => setTimeout(r, 1500));
@@ -48,6 +48,7 @@ export async function runTroubleshooter(onProgress?: (lines: string[]) => void):
 
   // Step 3: Delete cached profiles
   try {
+    // Legacy cleanup: old "chrome-profile*" names from v0.1.3 and earlier, canonical is "chromium-profile-v2"
     const profiles = ["chrome-profile", "chrome-profile-v2", "chromium-profile-v2"];
     let deletedAny = false;
     for (const p of profiles) {

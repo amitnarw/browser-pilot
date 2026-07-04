@@ -33,12 +33,12 @@ export async function stopProcesses(): Promise<string[]> {
 
   // Stop Chromium with our profile
   const profileDir = path.join(CONFIG_DIR, "chromium-profile-v2");
-  const winProfileDir = profileDir.replace(/\\/g, "\\\\");
+  const winProfileDir = profileDir.replace(/\\/g, "\\\\").replace(/'/g, "''");
   try {
     if (process.platform === "win32") {
       await execAsync(
-        `powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name='chrome.exe'\\" | Where-Object { $_.CommandLine -like '*${winProfileDir}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-        { timeout: 10000 }
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like '*${winProfileDir}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+        { timeout: 10000, shell: "powershell.exe" }
       );
     } else {
       // macOS / Linux

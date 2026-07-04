@@ -17,7 +17,7 @@ the AI is controlling the browser (hard lock).
 
 ```powershell
 # Install (one command)
-npm install -g web-mcp
+npm install -g @amitnarw/web-mcp
 
 # Setup (one command)
 web-mcp setup
@@ -145,14 +145,14 @@ AI calls browser_stop
 
 ### Configuration Files by Client
 - **Web MCP Config**: `~/.web-mcp/config.json` — Configures local coordinate server and browser settings.
-- **OpenCode**: `~/.opencode.json` (primary config file, falls back to `~/.config/opencode/opencode.json` on older versions). Standard `mcpServers` JSON block.
-- **Claude Desktop**: macOS (`~/Library/Application Support/Claude/claude_desktop_config.json`), Windows Roaming (`~/AppData/Roaming/Claude/claude_desktop_config.json`), Linux (`~/.config/Claude/claude_desktop_config.json`).
-- **Claude Code (CLI)**: `~/.claude/settings.json` (falls back to legacy `~/.claude.json`).
-- **Cursor**: `~/.cursor/mcp.json`.
-- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`.
+- **OpenCode**: `~/.config/opencode/opencode.json` with `mcp` key (`type: "local"`, `command` array). Also detects legacy `~/.opencode.json`.
+- **Claude Desktop**: macOS (`~/Library/Application Support/Claude/claude_desktop_config.json`), Windows Roaming (`~/AppData/Roaming/Claude/claude_desktop_config.json`), Linux (`~/.config/Claude/claude_desktop_config.json`). `mcpServers` key with `type: "stdio"`, `command: "npx"`, `args`.
+- **Claude Code (CLI)**: `~/.claude.json` (user-scoped MCP, per Anthropic docs). Also detects legacy `~/.claude/settings.json`.
+- **Cursor**: `~/.cursor/mcp.json`, `mcpServers` key.
+- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`, `mcpServers` key.
 - **Zed Editor**: Windows Roaming (`~/AppData/Roaming/Zed/settings.json`), macOS (`~/Library/Application Support/Zed/settings.json`), Linux (`~/.config/zed/settings.json`). Configured under the `context_servers` JSON key.
 - **Sourcegraph Cody**: Windows Roaming (`~/AppData/Roaming/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json`), macOS (`~/Library/Application Support/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json`), Linux (`~/.config/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json`).
-- **Roo Code (Cline)**: `~/.cline/data/settings/cline_mcp_settings.json`.
+- **Cline**: `~/.cline/data/settings/cline_mcp_settings.json`, `mcpServers` key.
 - **OpenAI Codex**: `~/.codex/config.toml` (TOML format) and auto-generated instructions at `~/.codex/web-mcp-instructions.md` via the `model_instructions_file` configuration directive.
 - **Antigravity IDE**: `~/.gemini/antigravity/mcp_config.json`.
 - **ChatGPT Desktop**: Manually configured bridge connection via settings.
@@ -279,14 +279,14 @@ d:\amit\browser-pilot\
 }
 ```
 
-### ~/.opencode.json (OpenCode Configuration)
+### ~/.config/opencode/opencode.json (OpenCode Configuration)
 ```json
 {
-  "mcpServers": {
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
     "web-mcp": {
-      "type": "stdio",
-      "command": "web-mcp",
-      "args": ["mcp"],
+      "type": "local",
+      "command": ["npx", "-y", "@amitnarw/web-mcp", "mcp"],
       "enabled": true
     }
   }
@@ -298,8 +298,8 @@ d:\amit\browser-pilot\
 model_instructions_file = "C:/Users/admin/.codex/web-mcp-instructions.md"
 
 [mcp_servers.web-mcp]
-command = "web-mcp"
-args = ["mcp"]
+command = "npx"
+args = ["-y", "@amitnarw/web-mcp", "mcp"]
 ```
 
 ## Development Commands
@@ -323,7 +323,7 @@ node bin/web-mcp.js stop
 npm install -g .
 
 # Uninstall global
-npm uninstall -g web-mcp
+npm uninstall -g @amitnarw/web-mcp
 
 # Pack for publishing
 npm pack

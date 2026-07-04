@@ -162,6 +162,7 @@ function loadConfig(): Config {
       // because absolute paths were saved in the user's config.json on the first run.
       merged.server.script = defaults.server.script;
       merged.extension.dir = defaults.extension.dir;
+      merged.chrome.profileDir = defaults.chrome.profileDir;
 
       log("Config loaded from " + CONFIG_FILE);
       return merged;
@@ -339,7 +340,7 @@ async function killStaleServer(): Promise<void> {
     if (process.platform === "win32") {
       execSync(`powershell -Command "$pidToKill = Get-NetTCPConnection -LocalPort ${config.server.port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -First 1; if ($pidToKill) { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue }"`, { stdio: "ignore" });
     } else {
-      execSync(`lsof -t -i:${config.server.port} | xargs -r kill -9`, { stdio: "ignore" });
+      execSync(`lsof -t -i:${config.server.port} | while read pid; do kill -9 "$pid"; done`, { stdio: "ignore" });
     }
   } catch {
     // Ignore OS kill errors

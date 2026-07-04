@@ -26,7 +26,7 @@ Chromium "Load unpacked" extensions **do NOT auto-update** when files change.
 
 ### Rebuild + Reload Command
 ```powershell
-cd "D:\amit\browser-pilot"
+cd "C:\Users\Narwal\Desktop\browser-pilot"
 npm run build
 npm run bundle
 ```
@@ -172,16 +172,20 @@ web-mcp troubleshoot
 **Problem:** OpenAI Codex does not use standard JSON MCP settings or would bypass Web MCP in favor of its built-in browser engine.
 **Fix:** Configured the setup script to automatically parse, write, and append config settings to Codex's `~/.codex/config.toml` using the correct `[mcp_servers.web-mcp]` block and referencing a generated `~/.codex/web-mcp-instructions.md` model instructions file (using `model_instructions_file = "..."`). This instructs the Codex model to always prefer Web MCP over its built-in browser.
 
-### 26. Unified Configuration Paths and Keys (v0.1.3)
-**Problem:** Configuration setup used outdated or incorrect paths/keys for several clients (e.g. Zed and Cody using LOCALAPPDATA instead of APPDATA on Windows, OpenCode config keys nested under `mcp` instead of standard `mcpServers`).
-**Fix:** Updated `src/cli/setup.ts` to adhere to the latest 2026 specifications:
-- **OpenCode**: `~/.opencode.json` (primary config) with standard `mcpServers` key.
-- **Claude Desktop**: Support for macOS, Windows (APPDATA Roaming), and Linux (`~/.config/Claude/claude_desktop_config.json`) paths.
-- **Claude Code (CLI)**: `~/.claude/settings.json` (primary config).
-- **Zed**: `%APPDATA%/Zed/settings.json` on Windows (using Roaming).
-- **Sourcegraph Cody**: `%APPDATA%/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json` on Windows.
-- **Roo Code (Cline)**: `~/.cline/data/settings/cline_mcp_settings.json`.
-- **OpenAI Codex**: `~/.codex/config.toml` (TOML format support).
+### 26. Unified Configuration Paths and Keys (v0.1.3 — updated v0.1.5)
+**Problem:** Configuration setup used outdated or incorrect paths/keys for several clients.
+**Fix:** Updated `src/cli/setup.ts` with correct paths and schemas:
+- **OpenCode**: `~/.config/opencode/opencode.json` with `mcp` key (`type: "local"`, `command` array).
+- **Claude Desktop**: macOS/Windows/Linux standard Claude paths, `mcpServers` key with `type: "stdio"`.
+- **Claude Code (CLI)**: `~/.claude.json` (user-scoped MCP, per Anthropic docs).
+- **Cursor**: `~/.cursor/mcp.json`, `mcpServers` key with `type: "stdio"`.
+- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`, `mcpServers` key with `type: "stdio"`.
+- **Zed**: Platform-appropriate path (`APPDATA` on Windows), `context_servers` key.
+- **Sourcegraph Cody**: VS Code `globalStorage/sourcegraph.cody-ai/mcp_servers.json`.
+- **Cline**: `~/.cline/data/settings/cline_mcp_settings.json`, `mcpServers` key.
+- **OpenAI Codex**: `~/.codex/config.toml` (TOML format with `[mcp_servers.web-mcp]`).
+- **Antigravity IDE**: `~/.gemini/antigravity/mcp_config.json`.
+- **ChatGPT Desktop**: Manual setup via local bridge proxy.
 
 ## How It Works (End-to-End Flow)
 
@@ -205,7 +209,7 @@ web-mcp troubleshoot
 ## File Structure
 
 ```
-D:\amit\browser-pilot\
+C:\Users\Narwal\Desktop\browser-pilot\
 ├── src/
 │   ├── cli/                    # CLI commands (setup, stop, status, troubleshoot, browser)
 │   │   ├── browser.ts          # Launches browser with DevMode and profile
@@ -246,7 +250,7 @@ web-mcp troubleshoot
 web-mcp browser
 
 # Rebuild everything
-cd "D:\amit\browser-pilot"; npm run build; npm run bundle
+cd "C:\Users\Narwal\Desktop\browser-pilot"; npm run build; npm run bundle
 
 # Check server state
 Invoke-RestMethod "http://localhost:3026/sidebar/state" | ConvertTo-Json
@@ -258,7 +262,7 @@ Invoke-RestMethod "http://localhost:3026/debug" | ConvertTo-Json -Depth 3
 Invoke-RestMethod "http://localhost:3026/logs" | ConvertTo-Json -Depth 2
 
 # Start server manually
-node "D:\amit\browser-pilot\dist\server\server.min.js"
+node "C:\Users\Narwal\Desktop\browser-pilot\dist\server\server.min.js"
 
 # Check Chromium remote debugging
 Invoke-RestMethod "http://127.0.0.1:9222/json/version" | ConvertTo-Json

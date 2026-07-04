@@ -102,9 +102,9 @@ setInterval(function() {
 }, 3000);
 
 // --- ZOMBIE PROCESS PREVENTION ---
-// If the Node wrapper crashes unexpectedly, Chrome stays alive forever as an orphan.
+// If the Node wrapper crashes unexpectedly, Chromium stays alive forever as an orphan.
 // We periodically ping the server to ensure our parent process is still alive.
-// If it disappears for > 60 seconds, we cleanly shut down Chrome.
+// If it disappears for > 60 seconds, we cleanly shut down Chromium.
 var consecutivePingFailures = 0;
 setInterval(function() {
   fetch(SERVER_URL + "/ping", { method: "GET" })

@@ -1,12 +1,12 @@
-# Web MCP — Project State & Handover Reference (v0.1.3)
+# Web MCP — Project State & Handover Reference (v0.1.5)
 
-This document provides a clean, comprehensive summary of the current state of **Web MCP** (published as `@amitnarw/web-mcp@0.1.3`). 
+This document provides a clean, comprehensive summary of the current state of **Web MCP** (published as `@amitnarw/web-mcp`). 
 
 ---
 
-## 1. Version 0.1.3 Overview
+## 1. Version 0.1.5 Overview
 
-Web MCP is fully updated, packaged, and published under the scoped name `@amitnarw/web-mcp@0.1.3`. All core functionality, interactive CLI tools, coordinate servers, and browser extensions are stable.
+Web MCP is fully updated, packaged, and published under the scoped name `@amitnarw/web-mcp`. All core functionality, interactive CLI tools, coordinate servers, and browser extensions are stable.
 
 ### Key Releases & Fixes:
 1. **Stealth Mode / CAPTCHA Bypass**: Replaced `--enable-automation` with `--disable-blink-features=AutomationControlled` across both the browser manager and the main MCP wrapper to prevent Google and standard web sites from flagging and blocking automated actions.
@@ -14,7 +14,7 @@ Web MCP is fully updated, packaged, and published under the scoped name `@amitna
 3. **PowerShell Pipeline Process Cleanups**: Fixed the pipeline syntax for killing stale processes across Windows environments. It now correctly maps process IDs and prevents hidden failures:
    `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { ... } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
 4. **OpenAI Codex Integration**: Added support for Codex configuration in `config.toml` along with automatic generation of a custom instructions document at `~/.codex/web-mcp-instructions.md`. This instructions file contains system rules instructing the Codex LLM to always select Web MCP tools over its built-in browser engine.
-5. **Config Path Refactoring**: Standardized configuration directories, paths, and JSON key structures for all major AI clients (OpenCode, Claude Desktop, Claude Code, Cursor, Windsurf, Zed, Cody, Roo Code, Codex, Antigravity).
+5. **Config Path Refactoring**: Standardized configuration directories, paths, and JSON key structures for all major AI clients (OpenCode, Claude Desktop, Claude Code, Cursor, Windsurf, Zed, Cody, Cline, Codex, Antigravity).
 
 ---
 
@@ -24,14 +24,14 @@ The `web-mcp setup` script automates configuration injection across the followin
 
 | Client | Primary Configuration Path | Key/Block Used | Notes |
 | :--- | :--- | :--- | :--- |
-| **OpenCode** | `~/.opencode.json` | `mcpServers["web-mcp"]` | Falls back to `~/.config/opencode/opencode.json` |
+| **OpenCode** | `~/.config/opencode/opencode.json` | `mcp["web-mcp"]` | `type: "local"`, `command` array |
 | **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` | `mcpServers["web-mcp"]` | OS-specific paths mapped automatically |
-| **Claude Code** | `~/.claude/settings.json` | `mcpServers["web-mcp"]` | Falls back to `~/.claude.json` |
+| **Claude Code** | `~/.claude.json` | `mcpServers["web-mcp"]` | Falls back to `~/.claude/settings.json` |
 | **Cursor** | `~/.cursor/mcp.json` | `mcpServers["web-mcp"]` | |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `mcpServers["web-mcp"]` | |
 | **Zed Editor** | `~/Library/Application Support/Zed/settings.json` | `context_servers["web-mcp"]` | Roaming AppData mapped for Windows |
 | **Cody** | `~/Library/Application Support/Code/User/globalStorage/sourcegraph.cody-ai/mcp_servers.json` | `mcpServers["web-mcp"]` | Windows paths resolved under Roaming |
-| **Roo Code** | `~/.cline/data/settings/cline_mcp_settings.json` | `mcpServers["web-mcp"]` | Cline / Roo Code settings integration |
+| **Cline** | `~/.cline/data/settings/cline_mcp_settings.json` | `mcpServers["web-mcp"]` | IDE extension path; CLI uses `~/.cline/mcp.json` |
 | **OpenAI Codex** | `~/.codex/config.toml` | `[mcp_servers.web-mcp]` | TOML format; generates model instructions |
 | **Antigravity** | `~/.gemini/antigravity/mcp_config.json` | `mcpServers["web-mcp"]` | |
 | **ChatGPT Desktop**| Manual Setup | N/A | Connected via local proxy bridge |

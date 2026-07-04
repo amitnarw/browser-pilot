@@ -38,7 +38,7 @@ export async function launchBrowser(onProgress?: (lines: string[]) => void): Pro
   const notify = () => { if (onProgress) onProgress([...lines]); };
 
   lines.push("Launching dedicated Chromium browser with Web MCP extension...");
-  lines.push("\x1b[90m(Using a managed Chromium instance because modern Google Chromium blocks automated extension loading)\x1b[0m");
+  lines.push("\x1b[90m(Using a managed Chromium instance because modern Google Chrome blocks automated extension loading)\x1b[0m");
   notify();
 
   let chromeExe;
@@ -106,8 +106,8 @@ export async function launchBrowser(onProgress?: (lines: string[]) => void): Pro
     "--disable-popup-blocking",
     "--disable-translate",
     "--disable-fre",
-    "https://example.com",
-    "--disable-features=DisableLoadExtensionCommandLineSwitch,ExtensionDisableUnsupportedDeveloper"
+    "--disable-features=DisableLoadExtensionCommandLineSwitch,ExtensionDisableUnsupportedDeveloper",
+    "https://example.com"
   ];
 
   const cleanEnv: Record<string, string> = {};
@@ -122,7 +122,13 @@ export async function launchBrowser(onProgress?: (lines: string[]) => void): Pro
   // Kill existing isolated profile process before relaunch (non-blocking)
   try {
     if (process.platform === 'win32') {
-      spawn('wmic', ['process', 'where', `name='chrome.exe' and commandline like '%chromium-profile-v2%'`, 'call', 'terminate'], { detached: true, stdio: 'ignore' }).unref();
+      const profileEscaped = profileDir.replace(/\\/g, '\\\\').replace(/'/g, "''");
+      exec(
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like '*${profileEscaped}*' } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+        { shell: "powershell.exe" }
+      );
     } else {
       spawn('pkill', ['-f', `user-data-dir=${profileDir}`], { detached: true, stdio: 'ignore' }).unref();
     }
