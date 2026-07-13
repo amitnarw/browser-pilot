@@ -1,139 +1,89 @@
 # Web MCP
 
-Web MCP is a foreground AI browser automation tool designed to act as an **In-Browser Copilot**. It allows AI agents (via the Model Context Protocol - MCP) to control a live Chromium browser on your desktop while providing a clear, real-time activity feed and preventing human-AI input collisions.
+Web MCP is a tool that lets AI agents control a real web browser on your computer. Think of it like giving your AI assistant the ability to open a browser, go to websites, click buttons, fill out forms, and read what is on the page.
 
-[![npm version](https://img.shields.io/npm/v/@amitnarw/web-mcp.svg?style=flat-square)](https://www.npmjs.com/package/@amitnarw/web-mcp)
-[![npm downloads](https://img.shields.io/npm/dw/@amitnarw/web-mcp.svg?style=flat-square)](https://www.npmjs.com/package/@amitnarw/web-mcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-[![Model Context Protocol](https://img.shields.io/badge/MCP-Supported-blue?style=flat-square)](https://modelcontextprotocol.io)
-
----
+It works with AI tools like OpenCode, Cursor, Claude Code, and many others. When you ask your AI to "go to google.com and search for something", Web MCP opens an actual Chromium browser window and does it right in front of you.
 
 ![Web MCP in Action](https://raw.githubusercontent.com/amitnarw/web-mcp/main/assets/demo.png)
 
 ---
 
-## 📦 Scoped Package Name
+## What you can do with it
 
-This package is published under the scope name:
+- **Ask your AI to browse the web** — Your AI can navigate to any website, search for things, click on links, and scroll through pages. You can watch it happen in real time.
+
+- **Automate repetitive tasks** — Fill out forms, log in to websites, check dashboards, download reports. Your AI does the clicking and typing for you.
+
+- **Test your website or app** — Ask your AI to go through the checkout flow, check a specific page, or run through common user actions. Useful for quick testing without writing code.
+
+- **Extract information from websites** — Your AI can visit a page, read the content, and summarize it for you. Great for research, price checking, or monitoring.
+
+- **Manage your accounts** — Check your inbox, look at your analytics dashboard, review orders. The AI reads what is on the screen and tells you what you need to know.
+
+- **Run multi-step workflows** — Chain together several browser actions. For example: go to a site, log in, navigate to a report page, download data, and save it. All from one command.
+
+---
+
+## Quick start
+
+### 1. Install
+
 ```bash
 npm install -g @amitnarw/web-mcp
 ```
-*Note: The scoped prefix `@amitnarw/` is required to ensure namespace uniqueness and security on the npm registry.*
 
-## 🌐 Why We Use Chromium (Instead of Google Chrome)
+The install will automatically download a dedicated Chromium browser in the background. This takes about a minute.
 
-Modern Google Chrome builds block sideloading unpacked extensions during automated sessions. To bypass this restriction, Web MCP automatically manages and launches a dedicated **Chromium** instance (via Puppeteer) with developer mode enabled under an isolated profile directory (`~/.web-mcp/chromium-profile-v2/`).
-
-## Features
-
-- **Zero-Friction Setup**: Delivered as a single NPM package (`@amitnarw/web-mcp`) that bundles the Node.js MCP server and a dedicated Chromium Extension.
-- **Auto-Injection**: The MCP server automatically launches a dedicated Chromium profile and dynamically injects the Chromium Extension—no manual "Load Unpacked" required!
-- **Visual Feedback**: Features a native Chromium Side Panel with a real-time action feed and an ambient light overlay that activates when the AI takes control.
-- **Human-AI Collision Protection**: Web MCP uses a CSS DOM-overlay shield to physically block your hardware mouse clicks from disrupting the AI's synthetic DevTools clicks while it's actively working.
-- **Multi-Agent Concurrency**: Multiple AI agents (e.g. Cursor and OpenCode) can use the Web MCP singleton backend simultaneously without killing each other's sessions.
-- **Zero-Zombie Background Management**: The Chromium extension maintains a rigorous heartbeat with the local server. If your AI chat crashes, the browser securely self-destructs after 60 seconds to prevent memory leaks.
-
-## Prerequisites
-> [!IMPORTANT]
-> **A dedicated Chromium binary will be downloaded automatically** when you install this package. Web MCP uses this managed Chromium instance (via Puppeteer). The background download is roughly 130MB.
-
-## 🚀 Quick Start
-
-Get up and running in less than a minute:
-
-1. **Install globally:**
-   ```bash
-   npm install -g @amitnarw/web-mcp
-   ```
-
-2. **Launch the configuration dashboard:**
-   ```bash
-   web-mcp
-   ```
-   *Select **"Configure AI Client (Setup)"** and choose your preferred AI client from the list.*
-
-3. **Ask your AI:**
-   > "Go to google.com and search for OpenCode"
-
-## Supported AI Clients
-
-The CLI auto-installer can automatically configure any of the following:
-
-| Client | Config Location | Notes |
-|--------|----------------|-------|
-| **OpenCode** | `~/.config/opencode/opencode.json` | `mcp` key with `type: "local"`, `command` array |
-| **Claude Desktop** | `%APPDATA%/Claude/claude_desktop_config.json` | `mcpServers` key with `type: "stdio"` |
-| **Claude Code (CLI)** | `~/.claude.json` | `mcpServers` key with `type: "stdio"` |
-| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` key |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` key |
-| **Zed Editor** | `%APPDATA%/Zed/settings.json` | `context_servers` key |
-| **Sourcegraph Cody** | VS Code global storage | `mcpServers` key |
-| **OpenAI Codex** | `~/.codex/config.toml` | `[mcp_servers.web-mcp]` TOML block |
-| **ChatGPT Desktop** | Manual (no local config file) | Instructions shown in CLI |
-| **Antigravity IDE** | `~/.gemini/antigravity/mcp_config.json` | `mcpServers` key |
-| **Cline** | `~/.cline/data/settings/cline_mcp_settings.json` | `mcpServers` key |
-
-## 🛠️ Exposed MCP Tools Reference
-
-Web MCP registers 21 powerful tools natively with your AI client.
-
-<details>
-<summary><b>🔍 View Exposed Tools List</b></summary>
-
-| Tool Name | Parameters | Description |
-|:---|:---|:---|
-| `browser_navigate` | `url` | Navigates the browser to the specified URL |
-| `browser_click` | `selector` / `uid` | Clicks on a DOM element using its snapshot ID or CSS selector |
-| `browser_type` | `text`, `submitKey?` | Types text into the currently focused DOM element |
-| `browser_fill` | `uid`, `text` | Directly fills a form input by its snapshot ID |
-| `browser_scroll` | `direction` | Scrolls the page up, down, left, or right |
-| `browser_screenshot` | | Captures a PNG screenshot of the current viewport |
-| `browser_snapshot` | | Returns the simplified DOM layout and accessibility tree |
-| `browser_press_key` | `key` | Dispatches a keypress event (e.g. Enter, Escape, Backspace) |
-| `browser_wait` | `selector` / `timeout` | Waits for a selector to appear or pauses for a duration |
-| `browser_evaluate` | `script` | Evaluates arbitrary JavaScript inside the page context |
-| `browser_new_tab` | `url?` | Opens a new browser tab |
-| `browser_close_tab` | | Closes the active browser tab |
-| `browser_switch_tab` | `index` | Switches focus to another tab by its index |
-| `browser_get_tabs` | | Lists all currently open tabs and their metadata |
-| `browser_get_url` | | Retrieves the URL of the active tab |
-| `browser_hover` | `uid` | Hovers the virtual mouse over an element |
-| `browser_drag` | `sourceUid`, `targetUid` | Performs a drag-and-drop action between elements |
-| `browser_get_status` | | Returns server session status (active, locked, idle) |
-| `browser_done` | | Signals completion of tasks, unlocking the overlay |
-| `browser_stop` | | Closes the browser and stops the session |
-
-</details>
-
-## Usage
-
-After running setup, using Web MCP is seamless:
-
-1. Open your AI client (e.g., OpenCode, Cursor, Claude Code).
-2. Ask the AI: *"Go to google.com and search for OpenCode"*
-3. The AI will call the MCP tools. Web MCP will automatically launch Chromium, attach the extension, show the action feed in the side panel, and execute the task!
-
-### CLI Commands
+### 2. Run setup
 
 ```bash
-web-mcp                  # Interactive dashboard (recommended)
-web-mcp setup            # Quick setup/uninstall (non-interactive)
-web-mcp troubleshoot     # Fix environment, cache, or stuck process issues
-web-mcp browser          # Manually launch the isolated Chromium browser
-web-mcp mcp              # Run the raw MCP server (used by AI clients)
-web-mcp status           # View server & Chromium health
-web-mcp stop             # Force quit the background server and browser
-web-mcp test             # Test all configured AI client setups
-web-mcp help             # Show all commands
+web-mcp
 ```
 
-## 👤 Created By
+A menu will appear. Select **Configure AI Client (Setup)** and pick your AI tool from the list. This creates the configuration file your AI needs to talk to Web MCP.
 
-Web MCP is built and maintained by **Amit Narwal**.
-* **Website**: [amitnarwal.com](https://amitnarwal.com)
-* **GitHub**: [@amitnarw](https://github.com/amitnarw)
-* **Email**: [amitnarwal115@gmail.com](mailto:amitnarwal115@gmail.com)
+### 3. Ask your AI
 
-## License
-MIT
+Once setup is done, just ask your AI something like:
+
+> "Go to google.com and search for OpenCode"
+
+Web MCP will launch the browser, do the task, and show you what is happening.
+
+---
+
+## Privacy
+
+Everything stays on your machine. Web MCP runs entirely locally:
+
+- The browser opens on your computer, not on some remote server.
+- No screenshots, URLs, or browsing data are sent anywhere.
+- No analytics, no telemetry, no tracking.
+- Your actions and the AI's actions stay private to your session.
+
+We designed it this way from the start. Your data is yours.
+
+---
+
+## Supported AI clients
+
+Web MCP works with these tools: OpenCode, Cursor, Claude Desktop, Claude Code (CLI), Windsurf, Zed Editor, Sourcegraph Cody, OpenAI Codex, ChatGPT Desktop, Cline, and Antigravity IDE.
+
+The setup menu walks you through the configuration for each one.
+
+---
+
+## Full documentation
+
+For detailed guides, use cases, troubleshooting, and a complete list of available tools, check out the docs:
+
+[https://github.com/amitnarw/web-mcp/tree/main/docs](https://github.com/amitnarw/web-mcp/tree/main/docs)
+
+---
+
+## Credits
+
+Built and maintained by Amit Narwal.
+
+- Website: [amitnarwal.com](https://amitnarwal.com)
+- Email: amitnarwal115@gmail.com

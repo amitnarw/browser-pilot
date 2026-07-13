@@ -3,3 +3,8 @@ dist/
 *.js.map
 .env
 *.tgz
+src/
+scripts/
+extension/
+bin/
+.npmignore
