@@ -9,7 +9,7 @@ Web MCP is a foreground AI browser automation tool designed to act as an **In-Br
 
 ---
 
-![Web MCP in Action](https://raw.githubusercontent.com/amitnarw/browser-pilot/main/assets/demo.png)
+![Web MCP in Action](https://raw.githubusercontent.com/amitnarw/web-mcp/main/assets/demo.png)
 
 ---
 

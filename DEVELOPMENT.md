@@ -172,7 +172,7 @@ AI calls browser_stop
 ## File Structure
 
 ```
-d:\amit\browser-pilot\
+d:\amit\web-mcp\
 ├── bin/
 │   └── web-mcp.js          # CLI entry point (ESM, dynamic imports)
 ├── src/
