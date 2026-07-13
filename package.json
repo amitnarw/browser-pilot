@@ -1,7 +1,19 @@
 {
   "name": "@amitnarw/web-mcp",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Dedicated browser automation MCP server using an isolated Chromium profile and Extension to provide AI browser control. Fully supports OpenCode, Cursor, Claude Code, Zed Editor, Sourcegraph Cody, Windsurf, Cline, and OpenAI Codex.",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "browser",
+    "browser-automation",
+    "chromium",
+    "puppeteer",
+    "ai",
+    "agent",
+    "automation",
+    "model-context-protocol"
+  ],
   "type": "module",
   "main": "dist/mcp/wrapper.min.js",
   "bin": {

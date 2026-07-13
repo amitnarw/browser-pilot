@@ -26,7 +26,7 @@ Chromium "Load unpacked" extensions **do NOT auto-update** when files change.
 
 ### Rebuild + Reload Command
 ```powershell
-cd "C:\Users\Narwal\Desktop\browser-pilot"
+cd "C:\Users\Narwal\Desktop\web-mcp"
 npm run build
 npm run bundle
 ```
@@ -209,7 +209,7 @@ web-mcp troubleshoot
 ## File Structure
 
 ```
-C:\Users\Narwal\Desktop\browser-pilot\
+C:\Users\Narwal\Desktop\web-mcp\
 ├── src/
 │   ├── cli/                    # CLI commands (setup, stop, status, troubleshoot, browser)
 │   │   ├── browser.ts          # Launches browser with DevMode and profile
@@ -250,7 +250,7 @@ web-mcp troubleshoot
 web-mcp browser
 
 # Rebuild everything
-cd "C:\Users\Narwal\Desktop\browser-pilot"; npm run build; npm run bundle
+cd "C:\Users\Narwal\Desktop\web-mcp"; npm run build; npm run bundle
 
 # Check server state
 Invoke-RestMethod "http://localhost:3026/sidebar/state" | ConvertTo-Json
@@ -262,7 +262,7 @@ Invoke-RestMethod "http://localhost:3026/debug" | ConvertTo-Json -Depth 3
 Invoke-RestMethod "http://localhost:3026/logs" | ConvertTo-Json -Depth 2
 
 # Start server manually
-node "C:\Users\Narwal\Desktop\browser-pilot\dist\server\server.min.js"
+node "C:\Users\Narwal\Desktop\web-mcp\dist\server\server.min.js"
 
 # Check Chromium remote debugging
 Invoke-RestMethod "http://127.0.0.1:9222/json/version" | ConvertTo-Json
