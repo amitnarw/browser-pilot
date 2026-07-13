@@ -38,6 +38,12 @@ Common problems and how to fix them:
 
 [Troubleshooting](troubleshooting.md)
 
+## Changelog
+
+What changed in each version:
+
+[Changelog](CHANGELOG.md)
+
 ## Roadmap
 
 What we are working on next:
